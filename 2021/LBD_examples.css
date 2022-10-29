@@ -1,14 +1,13 @@
 html {
     font-size: 11pt;
     font-family: Calibri, Candara, Segoe, "Segoe UI", Optima, Arial, humanist,sans serif;
-    margin-left: 25px;
-    margin-right: 25px;
+    margin: 2em;
 }
 .titolo {
     background-color: rgb(222,234,246);
     color: rgb(31,78,121);
     margin-left: -20px;
-    padding-bottom: 8pt;
+    padding-bottom: 0.5em;
     font-style: italic;
     font-weight: bold;
     text-align: center;
@@ -19,7 +18,7 @@ html {
     color: rgb(31,78,121);
     font-size:109%;
     margin-left: -20px;
-    margin-bottom: 8pt;
+    margin-bottom: 0.5em;
     font-style: italic;
     font-weight: bold;
     text-align: center;
@@ -31,7 +30,7 @@ h1 {
     color: rgb(31,78,121);
     font-size:145%;
     margin-left: -20px;
-    margin-top:12pt;
+    margin-top:1em;
     margin-bottom: 0;
 }
 h1:before {
@@ -43,7 +42,7 @@ h2 {
     font-size:118%;
     font-weight: normal;
     margin-left: -10px;
-    margin-top:2pt;
+    margin-top:1em;
     margin-bottom: 0;
 }
 h2:before {
@@ -66,13 +65,13 @@ h4 {
     font-size:100%;
     font-style: italic;
     font-weight: normal;
-    margin-top:2pt;
+    margin-top:0.5em;
     margin-bottom: 0;
 }
 pre {
     counter-increment: excode!important;
-    margin-top:6pt;
-    margin-bottom: 6pt;
+    margin-top:0.5em;
+    margin-bottom: 0.5em;
     background-color: rgb(242,242,242);
     font-family: Lucida Console,Courier,monospace, sans-serif;
     white-space: pre-wrap;
@@ -93,8 +92,8 @@ pre:before {
 }
 
 p {
-	margin-top:0pt;
-	margin-bottom: 8pt;
+	margin-top:0;
+	margin-bottom: 1em;
 	text-align: justify;
 }
 
@@ -111,6 +110,10 @@ ol  ol  ol {
 }
 
 @media print {
+	html {
+		margin: 0;		
+	}
+	
 	@page {
 		size: A4;
 		margin-top: 25mm;

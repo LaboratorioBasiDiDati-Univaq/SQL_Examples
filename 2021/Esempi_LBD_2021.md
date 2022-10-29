@@ -1,7 +1,7 @@
 <!doctype html>
 
 <html><head>
-<meta charset="utf-8">
+<meta charset="UTF-8"/>
 <link rel="stylesheet" href="LBD_examples.css">
 <link rel="stylesheet" href="github.min.css">
 <script src="highlight.min.js">/* */</script>
@@ -307,7 +307,7 @@ SELECT *
  FROM partita p
  WHERE extract(year FROM p.data)=2020
  ORDER BY data ASC
-LIMIT 1
+ LIMIT 1
 ```
 
 ## Paginazione dei risultati di una query
@@ -419,8 +419,7 @@ E possiamo usarli come una lista, imponendo che il luogo della partita sia in es
 ```sql
 SELECT * FROM partita p
  WHERE p.ID_luogo IN (SELECT l.ID FROM luogo l
- WHERE l.citta = "Roma"
-)
+ WHERE l.citta = "Roma")
 ```
 
 Attenzione a selezionare *solo una colonna*, altrimenti la IN non funziona:
@@ -489,8 +488,7 @@ Eh no, l'operatore \>= non può lavorare su una lista, serve un adattatore, in q
 SELECT *, (p1.punti_squadra_1+p1.punti_squadra_2) AS punti
  FROM partita p1
  WHERE (p1.punti_squadra_1+p1.punti_squadra_2) >= ALL
-(SELECT (p2.punti_squadra_1+p2.punti_squadra_2) FROM partita
-p2)
+(SELECT (p2.punti_squadra_1+p2.punti_squadra_2) FROM partita p2)
 ```
 
 In pratica x \>= ALL (y,z) corrisponde a x\>=y AND x\>=z
@@ -530,8 +528,7 @@ SELECT p.data, s1.nome AS squadra1, s2.nome AS squadra2
 Possiamo aggiungere anche il luogo dell'incontro, facendo un altro JOIN con la tabella luogo:
 
 ```sql
-SELECT p.data, s1.nome AS squadra1, s2.nome AS squadra2, l.nome
-AS luogo
+SELECT p.data, s1.nome AS squadra1, s2.nome AS squadra2, l.nome AS luogo
  FROM partita p, squadra s1, squadra s2, luogo l
  WHERE p.ID_squadra_1 = s1.ID AND p.ID_squadra_2 = s2.ID AND p.ID_luogo = l.ID
  ORDER BY p.data ASC
@@ -540,8 +537,7 @@ AS luogo
 Possiamo anche concatenare i nomi delle due squadre e inserire la città relativa al luogo, per un output più "carino":
 
 ```sql
-SELECT p.data, concat(s1.nome , " - ", s2.nome) AS squadre,
-concat(l.nome, " (", l.citta, ")") AS luogo
+SELECT p.data, concat(s1.nome , " - ", s2.nome) AS squadre, concat(l.nome, " (", l.citta, ")") AS luogo
  FROM partita p, squadra s1, squadra s2, luogo l
  WHERE p.ID_squadra_1 = s1.ID AND p.ID_squadra_2 = s2.ID AND p.ID_luogo = l.ID
  ORDER BY p.data ASC
@@ -643,8 +639,7 @@ tuttavia, il "normale" INNER JOIN, con la regola di JOIN esplicitata, è comunqu
 
 ```sql
 SELECT f.numero, g.nome, g.cognome
- FROM
-formazione f JOIN giocatore g ON (g.ID = f.ID_giocatore)
+ FROM formazione f JOIN giocatore g ON (g.ID = f.ID_giocatore)
   JOIN squadra s ON (f.ID_squadra = s.ID)
  WHERE f.anno=2020 AND s.nome = "L'Aquila Calcio" AND s.citta="L'Aquila"
  ORDER BY f.numero ASC
@@ -734,9 +729,9 @@ Ma se un giocatore non ha giocato nel 2020? Il JOIN lo esclude! Se volessimo ved
 
 ```sql
 SELECT g.nome, g.cognome, s.nome AS squadra
- FROM giocatore g LEFT JOIN
-(formazione f JOIN squadra s ON (f.ID_squadra= s.ID))
-ON (f.ID_giocatore = g.ID)
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra= s.ID)) 
+  ON (f.ID_giocatore = g.ID)
  WHERE f.anno=2020
 ```
 
@@ -746,9 +741,9 @@ Però anche questa soluzione non funziona. Perché? Perché i giocatori che non 
 
 ```sql
 SELECT g.nome, g.cognome, s.nome AS squadra
- FROM giocatore g LEFT JOIN
-(formazione f JOIN squadra s ON (f.ID_squadra= s.ID))
-ON (f.ID_giocatore = g.ID)
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra= s.ID))
+  ON (f.ID_giocatore = g.ID)
  WHERE f.anno IS NULL OR f.anno=2020
 ```
 
@@ -756,10 +751,9 @@ oppure spostare il filtro sull'anno dalla WHERE alla condizione del sotto-JOIN t
 
 ```sql
 SELECT g.nome, g.cognome, s.nome AS squadra, f.anno
- FROM giocatore g LEFT JOIN
-(formazione f JOIN squadra s
-ON (f.ID_squadra = s.ID AND f.anno=2020))
-ON (f.ID_giocatore = g.ID)
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra = s.ID AND f.anno=2020))
+  ON (f.ID_giocatore = g.ID)
 ```
 
 # Operatori aggregati
@@ -826,7 +820,7 @@ Possiamo però inserire liberamente altre colonne calcolate con operatori aggreg
 
 ```sql
 SELECT count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
  WHERE c.anno=2020
 ```
@@ -835,9 +829,9 @@ oppure anche le date di inizio e fine campionato (prima e ultima partita, operat
 
 ```sql
 SELECT count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
-min(p.data) AS prima_partita,
-max(p.data) AS ultima_partita,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
+  min(p.data) AS prima_partita,
+  max(p.data) AS ultima_partita,
  FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
  WHERE c.anno=2020
 ```
@@ -846,10 +840,10 @@ o ancora la media dei punti per partita (operatore AVG):
 
 ```sql
 SELECT count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
-min(p.data) AS prima_partita,
-max(p.data) AS ultima_partita,
-avg(p.punti_squadra_1 + p.punti_squadra_2) AS media_punti_partita
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
+  min(p.data) AS prima_partita,
+  max(p.data) AS ultima_partita,
+  avg(p.punti_squadra_1 + p.punti_squadra_2) AS media_punti_partita
  FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
  WHERE c.anno=2020
 ```
@@ -862,7 +856,7 @@ Ovviamente la query di cui sopra non risolve questa richiesta, anche se mettiamo
 
 ```sql
 SELECT l.nome,count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -873,7 +867,7 @@ in quanto i conteggi ottenuti sono sempre relativi a TUTTE le partite, e non par
 
 ```sql
 SELECT l.nome,count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -885,7 +879,7 @@ In realtà la query di cui sopra non è del tutto corretta, in quanto i luoghi s
 
 ```sql
 SELECT l.nome,l.citta,count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -897,7 +891,7 @@ sarebbe più comodo raggruppare direttamente per l'ID del luogo, che sappiamo es
 
 ```sql
 SELECT l.nome,l.citta,count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -909,7 +903,7 @@ in quanto non è chiaro (almeno al DBMS) se nome e città, citati nella SELECT, 
 
 ```sql
 SELECT l.nome,l.citta,count(*) AS numero_partite,
-sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -951,8 +945,7 @@ SELECT g.nome, g.cognome, s.nome AS squadra
 ...e contare quanti record (punti segnati) ci sono in ciascuna partizione:
 
 ```sql
-SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS
-punti
+SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS punti
  FROM segna e
   JOIN giocatore g ON (e.ID_giocatore = g.ID)
   JOIN formazione f ON (f.ID_giocatore = g.ID)
@@ -966,8 +959,7 @@ punti
 infine, per ottenere una vera classifica, la ordiniamo per punti (colonna calcolata):
 
 ```sql
-SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS
-punti
+SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS punti
  FROM segna e
   JOIN giocatore g ON (e.ID_giocatore = g.ID)
   JOIN formazione f ON (f.ID_giocatore = g.ID)
@@ -982,8 +974,7 @@ punti
 ..e per essere precisi, definiamo anche come ordinare tra loro i giocatori a pari punti:
 
 ```sql
-SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS
-punti
+SELECT g.nome, g.cognome, s.nome AS squadra, count(*) AS punti
  FROM segna e
   JOIN giocatore g ON (e.ID_giocatore = g.ID)
   JOIN formazione f ON (f.ID_giocatore = g.ID)
@@ -1050,7 +1041,7 @@ Se dobbiamo imporre una condizione filtrante NON sui record singoli, MA su funzi
 
 ```sql
 SELECT l.nome,l.citta,
-sum(p.punti_squadra_1+p.punti_squadra_2) AS punti
+  sum(p.punti_squadra_1+p.punti_squadra_2) AS punti
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN luogo l ON (l.ID=p.ID_luogo)
@@ -1084,8 +1075,7 @@ SELECT g.nome, g.cognome, count(*) AS squadre
 Da notare che abbiamo rimosso la tabella squadra dalla query (assieme al relativo JOIN) in quanto non ci interessa più avere in output il nome di ciascuna squadra, ma solo il numero di formazioni/squadre, che è deducibile dalla sola tabella formazione. Tuttavia, questa query riporta il numero di formazioni in cui ciascun giocatore è stato inserito. Due formazioni diverse possono essere relative alla stessa squadra! Dobbiamo allora contare il numero di squadre distinte che compaiono nelle formazioni associate a ciascun giocatore:
 
 ```sql
-SELECT g.nome, g.cognome, count(DISTINCT f.ID_squadra) AS
-squadre
+SELECT g.nome, g.cognome, count(DISTINCT f.ID_squadra) AS squadre
  FROM giocatore g
   JOIN formazione f ON (g.ID=f.ID_giocatore)
  WHERE f.anno between 2015 AND 2020
@@ -1163,8 +1153,7 @@ Tornando alla query richiesta (almeno un punto), potevamo ottenere lo stesso ris
 ```sql
 SELECT g.nome, g.cognome
  FROM giocatore g
- WHERE EXISTS(
-SELECT *
+ WHERE EXISTS(SELECT *
  FROM segna e
   JOIN partita p ON (e.ID_partita = p.ID)
   JOIN campionato c ON (p.ID_campionato = c.ID)
@@ -1180,8 +1169,7 @@ Mentre la query precedente poteva essere efficacemente (e preferibilmente) risol
 ```sql
 SELECT g.nome, g.cognome
  FROM giocatore g
- WHERE NOT EXISTS(
-SELECT *
+ WHERE NOT EXISTS(SELECT *
  FROM segna e
   JOIN partita p ON (e.ID_partita = p.ID)
   JOIN campionato c ON (p.ID_campionato = c.ID)
@@ -1214,8 +1202,7 @@ Una prima soluzione potrebbe essere quindi quella di elencare tutte le partite e
 
 ```sql
 SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
-(SELECT min(e.minuto) FROM segna e WHERE e.ID_partita=p.ID)
-AS primo_goal
+  (SELECT min(e.minuto) FROM segna e WHERE e.ID_partita=p.ID) AS primo_goal
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
@@ -1229,7 +1216,7 @@ Possiamo anche evitare la sotto query usando in maniera più "furba" l'aggregazi
 
 ```sql
 SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
-min(e.minuto) AS primo_goal
+  min(e.minuto) AS primo_goal
  FROM partita p
   JOIN segna e ON (e.ID_partita=p.ID)
   JOIN campionato c ON (p.ID_campionato = c.ID)
@@ -1245,12 +1232,12 @@ Il problema è che con questa soluzione le partite terminate senza punti (zero a
 
 ```sql
 SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
-min(e.minuto) AS primo_goal
+  min(e.minuto) AS primo_goal
  FROM (partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
-  JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
-  JOIN squadra s2 ON (s2.ID=p.ID_squadra_2))
-LEFT JOIN segna e ON (e.ID_partita=p.ID)
+   JOIN campionato c ON (p.ID_campionato = c.ID)
+   JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
+   JOIN squadra s2 ON (s2.ID=p.ID_squadra_2))
+  LEFT JOIN segna e ON (e.ID_partita=p.ID)
  WHERE c.anno=2020
  GROUP BY p.ID, s1.nome, s2.nome
 ```
@@ -1262,13 +1249,13 @@ La query, in altre parole, ci chiede di calcolare la media sul minuto del primo 
 ```sql
 SELECT avg(pg.primo_goal) AS media_primo_goal
  FROM (
-SELECT min(e.minuto) AS primo_goal
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
-  JOIN segna e ON (e.ID_partita=p.ID)
- WHERE c.anno=2020
- GROUP BY p.ID
-) AS pg
+  SELECT min(e.minuto) AS primo_goal
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato = c.ID)
+    JOIN segna e ON (e.ID_partita=p.ID)
+   WHERE c.anno=2020
+   GROUP BY p.ID
+ ) AS pg
 ```
 
 In questo caso la query, messa tra parentesi nella FROM, costituisce per SQL a tutti gli effetti una tabella (calcolata), a cui dobbiamo dare un alias (pg), e sulla quale possiamo effettuare altre operazioni (qui semplicemente la funzione aggregata avg sulla colonna primo_goal di tutti i record). Da notare che abbiamo anche semplificato la sotto-query eliminando i JOIN con la tabella squadra, perché in questo caso non dovevamo esterne i nomi.
@@ -1279,7 +1266,7 @@ Possiamo calcolare i punti segnati da ciascun giocatore in ciascuna partita del 
 
 ```sql
 SELECT g.ID AS gioc, g.nome, g.cognome, p.ID AS part,
-count(*) AS segnati
+  count(*) AS segnati
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN segna e ON (e.ID_partita=p.ID)
@@ -1292,16 +1279,16 @@ e applicando la stessa soluzione già vista, cioè usando quella precedente come
 
 ```sql
 SELECT gpp.nome, gpp.cognome,
-avg(gpp.segnati) AS media_punti_partita
+  avg(gpp.segnati) AS media_punti_partita
  FROM (
-SELECT g.ID AS gioc, g.nome, g.cognome, count(*) AS segnati
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
-  JOIN segna e ON (e.ID_partita=p.ID)
-  JOIN giocatore g ON (e.ID_giocatore=g.ID)
- WHERE c.anno=2020
- GROUP BY g.ID, p.ID, g.nome, g.cognome
-) AS gpp
+  SELECT g.ID AS gioc, g.nome, g.cognome, count(*) AS segnati
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato = c.ID)
+    JOIN segna e ON (e.ID_partita=p.ID)
+    JOIN giocatore g ON (e.ID_giocatore=g.ID)
+   WHERE c.anno=2020
+   GROUP BY g.ID, p.ID, g.nome, g.cognome
+ ) AS gpp
  GROUP BY gpp.gioc
 ```
 
@@ -1338,10 +1325,9 @@ A questo punto, confrontando tra di loro i punteggi riportati nella partita, e c
 
 ```sql
 SELECT s.nome, sum(
-IF(p.punti_squadra_1>p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-)) AS punti_classifica_in_casa
+IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_in_casa
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN squadra s ON (s.ID=p.ID_squadra_1)
@@ -1353,10 +1339,9 @@ allo stesso modo possiamo calcolare i punti classifica ottenuti fuori casa, semp
 
 ```sql
 SELECT s.nome, sum(
-IF(p.punti_squadra_1<p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-)) AS punti_classifica_fuori_casa
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_fuori_casa
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN squadra s ON (s.ID=p.ID_squadra_2)
@@ -1370,10 +1355,9 @@ Sappiamo già calcolare i punti ottenuti in casa e fuori casa da una specifica s
 
 ```sql
 SELECT sum(
-IF(p.punti_squadra_1<p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-)) AS punti_classifica_fuori_casa
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_fuori_casa
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
  WHERE c.anno=2020 AND p.ID_squadra_2=1
@@ -1383,25 +1367,19 @@ da notare che abbiamo eliminato il JOIN con squadra per maggiore efficienza, con
 
 ```sql
 SELECT s.nome, (
-(SELECT sum(
-IF(p.punti_squadra_1>p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-))
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
- WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
-) +
-(SELECT sum(
-IF(p.punti_squadra_1<p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-))
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
- WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
-)
-) AS punti_classifica
+  (SELECT sum(IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+    IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+   ))
+    FROM partita p
+     JOIN campionato c ON (p.ID_campionato = c.ID)
+    WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+  ) + (SELECT sum(IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+    IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+   ))
+    FROM partita p
+     JOIN campionato c ON (p.ID_campionato = c.ID)
+    WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+  )) AS punti_classifica
  FROM squadra s
  ORDER BY punti_classifica DESC
 ```
@@ -1413,13 +1391,12 @@ C'è però un problema: la query di cui sopra enumera tutte le squadre, anche qu
 ```sql
 SELECT s.ID
  FROM squadra s
- WHERE EXISTS(
-SELECT *
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato = c.ID)
- WHERE c.anno=2020
-AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
-)
+ WHERE EXISTS(SELECT *
+  FROM partita p
+   JOIN campionato c ON (p.ID_campionato = c.ID)
+  WHERE c.anno=2020
+  AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ )
 ```
 
 Possiamo introdurre questa condizione nella nostra query principale, ottenendo:
@@ -1588,16 +1565,11 @@ Partendo da quest'ultima formulazione, però, possiamo eliminare del tutto le so
 ```sql
 SELECT s.nome, sum(
 IF(s.ID = p.ID_squadra_1,
-IF(p.punti_squadra_1>p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-),
-IF(p.punti_squadra_1<p.punti_squadra_2,
-3,
-IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
-)
-)
-) AS punti_classifica
+IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)),
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0))
+)) AS punti_classifica
  FROM partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
   JOIN squadra s ON (s.ID = p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
@@ -1617,8 +1589,7 @@ La query è molto semplice da realizzare sulla base di quanto già visto:
 ```sql
 SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
 concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
-e.minuto AS minuto,
-concat(g.nome,' ',g.cognome,
+e.minuto AS minuto, concat(g.nome,' ',g.cognome,
 ' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
  FROM campionato c
   JOIN partita p ON (c.ID = p.ID_campionato)
@@ -1626,8 +1597,7 @@ concat(g.nome,' ',g.cognome,
   JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
   JOIN segna e ON (e.ID_partita=p.ID)
   JOIN giocatore g ON (g.ID=e.ID_giocatore)
-  JOIN formazione f
-ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
  ORDER BY p.data asc, e.minuto asc
 ```
 
@@ -1652,27 +1622,28 @@ concat(g.nome,' ',g.cognome,
   JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
   JOIN segna e ON (e.ID_partita=p.ID)
   JOIN giocatore g ON (g.ID=e.ID_giocatore)
-  JOIN formazione f
-ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
  ORDER BY p.data asc, e.minuto asc
 ```
 
 In questo modo la definizione della query risulta memorizzata nel database ed è utilizzabile, tramite il nome assegnatole, come una normale tabella in altre query:
 
 ```sql
-SELECT * FROM svolgimento_campionati;
+SELECT *
+ FROM svolgimento_campionati;
 ```
 
 ```sql
-SELECT * FROM svolgimento_campionati
-    WHERE anno_campionato=2020;
+SELECT *
+ FROM svolgimento_campionati
+ WHERE anno_campionato=2020;
 ```
 
 ```sql
 SELECT sc.*,p.data
-    FROM svolgimento_campionati sc
-    JOIN partita p ON (p.ID=sc.ID_partita)
-    WHERE anno_campionato=2020
+ FROM svolgimento_campionati sc
+ JOIN partita p ON (p.ID=sc.ID_partita)
+ WHERE anno_campionato=2020
 ```
 
 Va sempre ricordato che la vista viene "sostituita" dalla query quando è utilizzata, quindi i dati presenti nella  relativa "tabella virtuale" sono sempre aggiornati sulla base  dei contenuti correnti del database.
@@ -1683,8 +1654,8 @@ Un altro uso delle viste può essere quello di limitare/personalizzare l'accesso
 
 ```sql
 CREATE VIEW giocatore_gdpr AS
-SELECT ID,nome,cognome
- FROM giocatore
+ SELECT ID,nome,cognome
+  FROM giocatore
 ```
 
 In questo modo, potremmo assegnare (GRANT) a un certo utente i privilegi di SELECT su questa tabella piuttosto che su quella di origine (giocatore), permettendogli di usarla in altre query ma senza mai poter accedere ai dati sensibili. Ad esempio:
@@ -1713,8 +1684,7 @@ concat(g.nome,' ',g.cognome,
   JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
   JOIN segna e ON (e.ID_partita=p.ID)
   JOIN giocatore g ON (g.ID=e.ID_giocatore)
-  JOIN formazione f
-ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
  ORDER BY p.data asc, e.minuto asc
 ```
 
@@ -1746,9 +1716,9 @@ DROP PROCEDURE IF EXISTS formazioni;
 DELIMITER $
 CREATE PROCEDURE formazioni()
 BEGIN
-SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc;
+ SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc;
 END$
 DELMITER ;
 ```
@@ -1772,13 +1742,12 @@ Il risultato dipende dalla procedura. Se, come nel nostro caso, questa contiene 
 Sappiamo bene come scrivere questa query, ma ora vorremmo memorizzarla nel database in modo da poterla invocare senza riscriverne l'intero codice. Non possiamo usare una vista, perché ci sono dei parametri (squadra e anno), e le viste non possono avere parametri. Possiamo però usare una procedura, perché quest'ultima può accettare parametri:
 
 ```sql
-CREATE PROCEDURE formazione
-(idsquadra integer unsigned, anno smallint)
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
 BEGIN
-SELECT f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- WHERE f.anno=anno AND f.ID_squadra=idsquadra
- ORDER BY f.numero asc;
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
 END$
 ```
 
@@ -1798,12 +1767,12 @@ Attenzione, però: una chiamata a procedura non si può usare come sotto query, 
 CREATE procedure formazione
 (idsquadra integer unsigned, anno smallint)
 BEGIN
-DROP TABLE IF EXISTS formazione_r;
-CREATE TEMPORARY TABLE formazione_r AS
-SELECT f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- WHERE f.anno=anno AND f.ID_squadra=idsquadra
- ORDER BY f.numero asc;
+ DROP TABLE IF EXISTS formazione_r;
+ CREATE TEMPORARY TABLE formazione_r AS
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
 END$
 ```
 
@@ -1821,24 +1790,23 @@ SELECT * FROM formazione_r;
 Si tratta in questo caso di DUE query distinte, anche se molto simili tra loro. Possiamo però inglobarle in una stessa procedura, usando il costrutto IF...THEN...ELSE per scegliere quale eseguire in base ai parametri passati:
 
 ```sql
-CREATE PROCEDURE formazione
-(idsquadra integer unsigned, anno smallint)
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
 BEGIN
-IF (anno is not null) THEN
-BEGIN
-SELECT f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- WHERE f.anno=anno AND f.ID_squadra=idsquadra
- ORDER BY f.numero asc;
-END;
-ELSE
-BEGIN
-SELECT f.anno, f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- WHERE f.ID_squadra=idsquadra
- ORDER BY f.anno asc, f.numero asc;
-END;
-END IF;
+ IF (anno is not null) THEN
+ BEGIN
+  SELECT f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.anno=anno AND f.ID_squadra=idsquadra
+   ORDER BY f.numero asc;
+ END;
+ ELSE
+ BEGIN
+  SELECT f.anno, f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.ID_squadra=idsquadra
+   ORDER BY f.anno asc, f.numero asc;
+  END;
+ END IF;
 END$
 ```
 
@@ -1855,10 +1823,10 @@ Nota bene: questo risultato avremmo potuto ottenerlo anche senza usare un'istruz
 CREATE PROCEDURE formazione
 (idsquadra integer unsigned, anno smallint)
 BEGIN
-SELECT f.anno, f.numero, g.nome, g.cognome
- FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
- WHERE (anno IS NULL OR f.anno=anno) AND f.ID_squadra=idsquadra
- ORDER BY f.anno asc, f.numero asc;
+ SELECT f.anno, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE (anno IS NULL OR f.anno=anno) AND f.ID_squadra=idsquadra
+  ORDER BY f.anno asc, f.numero asc;
 END$
 ```
 
@@ -1874,9 +1842,9 @@ Anche qui la query è banale, ma proviamo a incorporarla in una procedura:
 CREATE PROCEDURE squadra_appartenenza
 (idgiocatore integer unsigned, anno smallint)
 BEGIN
-SELECT s.nome FROM squadra s
-  JOIN formazione f ON (f.ID_squadra=s.ID)
- WHERE f.ID_giocatore=idgiocatore AND f.anno=anno;
+ SELECT s.nome FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno;
 END$
 ```
 
@@ -1895,9 +1863,9 @@ CREATE PROCEDURE squadra_appartenenza
 (IN idgiocatore integer unsigned, IN anno smallint,
 OUT nome_squadra varchar(100))
 BEGIN
-SET nome_squadra = (SELECT s.nome FROM squadra s JOIN formazione f ON
-(f.ID_squadra=s.ID) WHERE f.ID_giocatore=idgiocatore AND
-f.anno=anno);
+ SET nome_squadra = (SELECT s.nome FROM squadra s JOIN formazione f ON
+  (f.ID_squadra=s.ID) WHERE f.ID_giocatore=idgiocatore AND
+  f.anno=anno);
 END$
 ```
 
@@ -1924,11 +1892,11 @@ CREATE PROCEDURE squadra_appartenenza
 (IN idgiocatore integer unsigned, IN anno smallint,
 OUT nome_squadra varchar(100))
 BEGIN
-SELECT s.nome
- FROM squadra s
-  JOIN formazione f ON (f.ID_squadra=s.ID)
- WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
-INTO nome_squadra;
+ SELECT s.nome
+  FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
+ INTO nome_squadra;
 END$
 ```
 
@@ -1943,16 +1911,16 @@ CREATE PROCEDURE squadra_appartenenza
 (IN idgiocatore integer unsigned, IN anno smallint,
 OUT nome_squadra varchar(100))
 BEGIN
-DECLARE citta varchar(100);
-DECLARE nome varchar(100);
+ DECLARE citta varchar(100);
+ DECLARE nome varchar(100);
 
-SELECT s.nome,s.citta
- FROM squadra s
-  JOIN formazione f ON (f.ID_squadra=s.ID)
- WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
-INTO nome, citta;
+ SELECT s.nome,s.citta
+  FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
+ INTO nome, citta;
 
-SET nome_squadra = concat(nome,' (',citta,')');
+ SET nome_squadra = concat(nome,' (',citta,')');
 END$
 ```
 
@@ -1964,11 +1932,11 @@ Possiamo riscrivere in maniera più naturale la procedura *squadra_appartenenza*
 
 ```sql
 CREATE FUNCTION squadra_per( idgiocatore integer unsigned, anno smallint ) 
-RETURNS varchar(100) DETERMINISTIC
+  RETURNS varchar(100) DETERMINISTIC
 BEGIN
-RETURN (SELECT concat(s.nome,' (',s.citta,')')
- FROM squadra s JOIN formazione f ON (f.ID_squadra=s.ID)
- WHERE f.ID_giocatore=idgiocatore AND f.anno=anno);
+ RETURN (SELECT concat(s.nome,' (',s.citta,')')
+  FROM squadra s JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno);
 END$
 ```
 
@@ -1983,8 +1951,7 @@ Usiamo come di consueto la parola chiave RETURN per restituire il risultato, in 
 È possibile usare la funzione appena definita in qualsiasi contesto: in altre funzioni o procedure, oppure all'interno di una query, come nell'esempio seguente:
 
 ```sql
-SELECT g.nome,g.cognome,squadra_per(g.ID,2020) AS
-squadra_2020
+SELECT g.nome,g.cognome,squadra_per(g.ID,2020) AS squadra_2020
  FROM giocatore g;
 ```
 
@@ -2007,12 +1974,12 @@ Ancora una volta, volendo considerare gli autogol, potremmo scrivere come segue:
 
 ```sql
 SELECT count(*)
-FROM segna e
- JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
- JOIN partita p ON (p.ID = e.ID_partita)
- JOIN campionato c ON (c.ID = p.ID_campionato)
-WHERE (f.anno = c.anno) AND (p.ID=X) AND 
- ((e.tipo='AUT' AND f.ID_squadra<>Y) 
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE (f.anno = c.anno) AND (p.ID=X) AND 
+  ((e.tipo='AUT' AND f.ID_squadra<>Y) 
   OR ((e.tipo IS NULL OR e.tipo<>'AUT') AND f.ID_squadra=Y))
 ```
 
@@ -2023,15 +1990,15 @@ Vogliamo trasformare questa query in una funzione, in modo da poterla rendere ve
 ```sql
 CREATE FUNCTION punti_in_partita(
 idpartita integer unsigned, idsquadra integer unsigned)
-RETURNS integer DETERMINISTIC
+  RETURNS integer DETERMINISTIC
 BEGIN
-RETURN (SELECT count(*)
- FROM segna e
-  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
-  JOIN partita p ON (p.ID = e.ID_partita)
-  JOIN campionato c ON (c.ID = p.ID_campionato)
- WHERE (f.anno = c.anno) AND (p.ID=idpartita)
-AND (f.ID_squadra=idsquadra));
+ RETURN (SELECT count(*)
+  FROM segna e
+   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+   JOIN partita p ON (p.ID = e.ID_partita)
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE (f.anno = c.anno) AND (p.ID=idpartita)
+ AND (f.ID_squadra=idsquadra));
 END$
 ```
 
@@ -2059,7 +2026,7 @@ Nel primo caso, la procedura si limita a effettuare una banale INSERT:
 CREATE PROCEDURE aggiungi_squadra(
 nome varchar(50), citta varchar(20))
 BEGIN
-INSERT INTO squadra(nome,citta) VALUES(nome,citta);
+ INSERT INTO squadra(nome,citta) VALUES(nome,citta);
 END$
 ```
 
@@ -2076,8 +2043,8 @@ CREATE FUNCTION aggiungi_squadra(
 nome varchar(50), citta varchar(20))
 RETURNS integer unsigned DETERMINISTIC
 BEGIN
-INSERT INTO squadra(nome,citta) VALUES(nome,citta);
-RETURN last_insert_id();
+ INSERT INTO squadra(nome,citta) VALUES(nome,citta);
+ RETURN last_insert_id();
 END$
 ```
 
@@ -2091,16 +2058,16 @@ Vogliamo realizzare una funzione che ritorna la chiave di un arbitro dati il suo
 CREATE FUNCTION cerca_aggiungi_arbitro(_nome varchar(50), _cognome varchar(100), _cf char(16))
 RETURNS char(16) DETERMINISTIC
 BEGIN
-DECLARE presente integer;
+ DECLARE presente integer;
 
-SELECT count(*) FROM arbitro a WHERE a.cf=_cf INTO presente;
+ SELECT count(*) FROM arbitro a WHERE a.cf=_cf INTO presente;
 
-IF (presente=0) THEN
-BEGIN
-INSERT INTO arbitro(nome,cognome,cf) VALUES(_nome,_cognome,_cf);
-END;
-END IF;
-RETURN _cf;
+ IF (presente=0) THEN
+ BEGIN
+  INSERT INTO arbitro(nome,cognome,cf) VALUES(_nome,_cognome,_cf);
+ END;
+ END IF;
+ RETURN _cf;
 END$
 ```
 
@@ -2109,8 +2076,7 @@ La funzione prima prova a cercare l'arbitro tramite il suo codice fiscale, e se 
 Scrivendo quindi
 
 ```sql
-SELECT
-cerca_aggiungi_arbitro("Nome","Cognome","2234567890123456")
+SELECT cerca_aggiungi_arbitro("Nome","Cognome","2234567890123456")
 ```
 
 avremo in output la chiave dell'arbitro, e ci assicureremo contemporaneamente che sia presente nel nostro database.
@@ -2121,25 +2087,25 @@ Questa funzione ha la stessa logica della precedente ma, considerate le differen
 
 ```sql
 CREATE FUNCTION cerca_aggiungi_squadra(
-_nome varchar(50), _citta varchar(100))
-RETURNS integer unsigned DETERMINISTIC
+  _nome varchar(50), _citta varchar(100))
+  RETURNS integer unsigned DETERMINISTIC
 BEGIN
-DECLARE idsquadra integer unsigned;
+ DECLARE idsquadra integer unsigned;
 
-SELECT s.ID FROM squadra s
- WHERE s.nome=_nome AND s.citta=_citta
-INTO idsquadra;
+ SELECT s.ID FROM squadra s
+  WHERE s.nome=_nome AND s.citta=_citta
+ INTO idsquadra;
 
-IF (found_rows()=0) THEN
-BEGIN
-INSERT INTO squadra(nome,citta) VALUES(_nome,_citta);
-RETURN last_insert_id();
-END;
-ELSE
-BEGIN
-RETURN idsquadra;
-END;
-END IF;
+ IF (found_rows()=0) THEN
+ BEGIN
+  INSERT INTO squadra(nome,citta) VALUES(_nome,_citta);
+  RETURN last_insert_id();
+ END;
+ ELSE
+ BEGIN
+  RETURN idsquadra;
+ END;
+ END IF;
 END$
 ```
 
@@ -2168,20 +2134,17 @@ _nome_arbitro_1 char(50),_cognome_arbitro_1 char(100),
 _cf_arbitro_1 char(16),
 OUT idpartita integer unsigned)
 BEGIN
-DECLARE IDarbitro_1 char(16);
+ DECLARE IDarbitro_1 char(16);
 
-INSERT INTO partita(data, ID_campionato, ID_luogo,
-ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
-VALUES (_data, _ID_campionato, _ID_luogo,
-_ID_squadra_1, _ID_squadra_2, 0, 0);
+ INSERT INTO partita(data, ID_campionato, ID_luogo, ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+  VALUES (_data, _ID_campionato, _ID_luogo, _ID_squadra_1, _ID_squadra_2, 0, 0);
 
-SET idpartita = last_insert_id();
+ SET idpartita = last_insert_id();
 
-SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1,
-_cognome_arbitro_1, _cf_arbitro_1);
+ SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1, _cognome_arbitro_1, _cf_arbitro_1);
 
-INSERT INTO direzione(CF_arbitro,ID_partita)
-VALUES(IDarbitro_1,idpartita);
+ INSERT INTO direzione(CF_arbitro,ID_partita)
+  VALUES(IDarbitro_1,idpartita);
 END$
 ```
 
@@ -2210,27 +2173,23 @@ _nome_arbitro_1 char(50),_cognome_arbitro_1 char(100),
 _cf_arbitro_1 char(16),
 OUT idpartita integer unsigned)
 BEGIN
-DECLARE IDarbitro_1 char(16);
-DECLARE _ID_squadra_1 integer unsigned;
-DECLARE _ID_squadra_2 integer unsigned;
+ DECLARE IDarbitro_1 char(16);
+ DECLARE _ID_squadra_1 integer unsigned;
+ DECLARE _ID_squadra_2 integer unsigned;
 
-SET _ID_squadra_1 = cerca_aggiungi_squadra(_nome_squadra_1,
-_citta_squadra_1);
-SET _ID_squadra_2 = cerca_aggiungi_squadra(_nome_squadra_2,
-_citta_squadra_2);
+ SET _ID_squadra_1 = cerca_aggiungi_squadra(_nome_squadra_1, _citta_squadra_1);
+ SET _ID_squadra_2 = cerca_aggiungi_squadra(_nome_squadra_2, _citta_squadra_2);
 
-INSERT INTO partita(data, ID_campionato, ID_luogo,
-ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
-VALUES (_data, _ID_campionato, _ID_luogo,
-_ID_squadra_1, _ID_squadra_2, 0, 0);
+ INSERT INTO partita(data, ID_campionato, ID_luogo,
+   ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+  VALUES (_data, _ID_campionato, _ID_luogo, _ID_squadra_1, _ID_squadra_2, 0, 0);
 
-SET idpartita = last_insert_id();
+ SET idpartita = last_insert_id();
 
-SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1,
-_cognome_arbitro_1, _cf_arbitro_1);
+ SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1, _cognome_arbitro_1, _cf_arbitro_1);
 
-INSERT INTO direzione(CF_arbitro,ID_partita)
-VALUES(IDarbitro_1,idpartita);
+ INSERT INTO direzione(CF_arbitro,ID_partita)
+  VALUES(IDarbitro_1,idpartita);
 END$
 ```
 
@@ -2249,47 +2208,43 @@ Sappiamo che questo significa inserire un record nella tabella segna, ma con una
 In questo modo garantiremo la coerenza dei dati nel nostro database.
 
 ```sql
-CREATE PROCEDURE aggiungi_punto(
-_ID_giocatore integer unsigned, _ID_partita integer unsigned,
-_minuto smallint)
+CREATE PROCEDURE aggiungi_punto( _ID_giocatore integer unsigned, _ID_partita integer unsigned, _minuto smallint)
 BEGIN
-DECLARE IDsquadra_giocatore integer unsigned;
-DECLARE IDsquadra_1 integer unsigned;
-DECLARE IDsquadra_2 integer unsigned;
+ DECLARE IDsquadra_giocatore integer unsigned;
+ DECLARE IDsquadra_1 integer unsigned;
+ DECLARE IDsquadra_2 integer unsigned;
 
-SELECT f.ID_squadra
- FROM formazione f
- WHERE f.ID_giocatore=_ID_giocatore
-AND f.anno=(
-SELECT c.anno
- FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
- WHERE p.ID=_ID_partita)
-INTO IDsquadra_giocatore;
+ SELECT f.ID_squadra
+  FROM formazione f
+  WHERE f.ID_giocatore=_ID_giocatore AND f.anno=(
+   SELECT c.anno
+    FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
+    WHERE p.ID=_ID_partita)
+  INTO IDsquadra_giocatore;
 
-SELECT p.ID_squadra_1, p.ID_squadra_2
- FROM partita p
- WHERE p.ID=_ID_partita
-INTO IDsquadra_1,IDsquadra_2;
+ SELECT p.ID_squadra_1, p.ID_squadra_2
+  FROM partita p
+  WHERE p.ID=_ID_partita
+ INTO IDsquadra_1,IDsquadra_2;
 
-IF (IDsquadra_giocatore=IDsquadra_1
-OR IDsquadra_giocatore=IDsquadra_2) THEN
-BEGIN
-INSERT INTO segna(ID_giocatore,ID_partita,minuto)
-VALUES (_ID_giocatore,_ID_partita,_minuto);
+ IF (IDsquadra_giocatore=IDsquadra_1 OR IDsquadra_giocatore=IDsquadra_2) THEN
+ BEGIN
+  INSERT INTO segna(ID_giocatore,ID_partita,minuto)
+   VALUES (_ID_giocatore,_ID_partita,_minuto);
 
-UPDATE partita SET
-punti_squadra_1 = punti_squadra_1 +
-IF(ID_squadra_1=IDsquadra_giocatore,1,0),
-punti_squadra_2 = punti_squadra_2 +
-IF(ID_squadra_2=IDsquadra_giocatore,1,0)
- WHERE ID=_ID_partita;
-END;
-ELSE
-BEGIN
-SIGNAL SQLSTATE '45000'
-SET message_text="Il giocatore non è in partita";
-END;
-END IF;
+  UPDATE partita SET
+    punti_squadra_1 = punti_squadra_1 +
+     IF(ID_squadra_1=IDsquadra_giocatore,1,0),
+    punti_squadra_2 = punti_squadra_2 +
+     IF(ID_squadra_2=IDsquadra_giocatore,1,0)
+   WHERE ID=_ID_partita;
+ END;
+ ELSE
+ BEGIN
+  SIGNAL SQLSTATE '45000'
+  SET message_text="Il giocatore non è in partita";
+ END;
+ END IF;
 END$
 ```
 
@@ -2334,8 +2289,7 @@ Di questa possiamo anche scrivere una variante che prende in considerazione gli 
 
 ```sql
 SELECT
-if(e.tipo='AUT', if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), f.ID_squadra)
-AS squadra_effettiva, count(*) AS punti
+if(e.tipo='AUT', if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), f.ID_squadra) AS squadra_effettiva, count(*) AS punti
  FROM segna e
   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
   JOIN partita p ON (p.ID = e.ID_partita)
@@ -2367,84 +2321,80 @@ A questo punto siamo pronti per scrivere la nostra procedura. La logica, dato l'
 *Nota: per semplicità, nelle query che seguono NON useremo la variante "autogol" vista sopra.*
 
 ```sql
-CREATE FUNCTION controlla_partita(idpartita integer
-unsigned)
-RETURNS varchar(100) DETERMINISTIC
+CREATE FUNCTION controlla_partita(idpartita integer unsigned) 
+ RETURNS varchar(100) DETERMINISTIC
 BEGIN
--- messaggio restituito
-DECLARE risultato varchar(100);
--- query di calcolo del punteggio dalla tabella segna
-DECLARE punti CURSOR FOR SELECT f.ID_squadra, count(*) AS punti
- FROM segna e
-  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
-  JOIN partita p ON (p.ID = e.ID_partita)
-  JOIN campionato c ON (c.ID = p.ID_campionato)
- WHERE p.ID=idpartita AND f.anno=c.anno
- GROUP BY f.ID_squadra;
+ -- messaggio restituito
+ DECLARE risultato varchar(100);
+ -- query di calcolo del punteggio dalla tabella segna
+ DECLARE punti CURSOR FOR SELECT f.ID_squadra, count(*) AS punti
+  FROM segna e
+   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+   JOIN partita p ON (p.ID = e.ID_partita)
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE p.ID=idpartita AND f.anno=c.anno
+  GROUP BY f.ID_squadra;
 
--- inizializzazione messaggio
-SET risultato = "ok";
--- esecuzione query di ricalcolo
-OPEN punti;
+ -- inizializzazione messaggio
+ SET risultato = "ok";
+ -- esecuzione query di ricalcolo
+ OPEN punti;
 
--- blocco di controllo
-controlli: BEGIN
--- dati estratti dalla tabella partita
-DECLARE ids1 integer unsigned;
-DECLARE ids2 integer unsigned;
-DECLARE ps1 integer unsigned;
-DECLARE ps2 integer unsigned;
--- punti calcolati dalla tabella segna
-DECLARE pcs1 integer unsigned;
-DECLARE pcs2 integer unsigned;
--- risultato di base (se una squadra non ha segnato)
-SET pcs1=0;
-SET pcs2=0;
--- informazioni presenti nella tabella partita
-SELECT ID_squadra_1,punti_squadra_1,ID_squadra_2,punti_squadra_2
- FROM partita
- WHERE ID=idpartita
-INTO ids1,ps1,ids2,ps2;
+ -- blocco di controllo
+ controlli: BEGIN
+ -- dati estratti dalla tabella partita
+  DECLARE ids1 integer unsigned;
+  DECLARE ids2 integer unsigned;
+  DECLARE ps1 integer unsigned;
+  DECLARE ps2 integer unsigned;
+  -- punti calcolati dalla tabella segna
+  DECLARE pcs1 integer unsigned;
+  DECLARE pcs2 integer unsigned;
+  -- risultato di base (se una squadra non ha segnato)
+  SET pcs1=0;
+  SET pcs2=0;
+  -- informazioni presenti nella tabella partita
+  SELECT ID_squadra_1,punti_squadra_1,ID_squadra_2,punti_squadra_2
+   FROM partita
+   WHERE ID=idpartita
+  INTO ids1,ps1,ids2,ps2;
 
--- blocco (nidificato) di ricalcolo
-ricalcolo: BEGIN
--- variabili temporanee locali al blocco
-DECLARE ids integer unsigned;
-DECLARE pcs integer unsigned;
+  -- blocco (nidificato) di ricalcolo
+  ricalcolo: BEGIN
+   -- variabili temporanee locali al blocco
+   DECLARE ids integer unsigned;
+   DECLARE pcs integer unsigned;
 
--- handler per il cursore (fa uscire dal blocco di ricalcolo)
-DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
+   -- handler per il cursore (fa uscire dal blocco di ricalcolo)
+   DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
 
--- loop di lettura dei punti (ri)calcolati dalla query
-LOOP
-FETCH punti INTO ids,pcs;
--- aggiornamento dei punti ricalcolati in base alla
--- squadra corrispondente
-IF (ids=ids1) THEN SET pcs1 = pcs;
-ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
-ELSE BEGIN
--- la squadra che ha segnato non è in partita!
-SET risultato = concat("La squadra ",(SELECT nome FROM squadra WHERE
-ID=ids)," ha segnato ",pcs," punti ma non risulta in partita");
--- non eseguiamo altri controlli, usciamo direttamente
-LEAVE controlli;
-END;
-END IF;
-END LOOP;
-END; -- ricalcolo
+   -- loop di lettura dei punti (ri)calcolati dalla query
+   LOOP
+    FETCH punti INTO ids,pcs;
+    -- aggiornamento dei punti ricalcolati in base alla
+    -- squadra corrispondente
+    IF (ids=ids1) THEN SET pcs1 = pcs;
+    ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
+    ELSE BEGIN
+     -- la squadra che ha segnato non è in partita!
+     SET risultato = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids)," ha segnato ",pcs," punti ma non risulta in partita");
+     -- non eseguiamo altri controlli, usciamo direttamente
+     LEAVE controlli;
+     END;
+    END IF;
+   END LOOP;
+  END; -- ricalcolo
 
--- confrontiamo i punti assegnati con quelli ricalcolati
-IF (ps1<>pcs1) THEN SET risultato = concat("I punti della squadra
-",(SELECT nome FROM squadra WHERE ID=ids1)," sono ",pcs1," ma la tabella
-partita riporta ", ps1);
-ELSEIF (ps2<>pcs2) THEN SET risultato = concat("I punti della
-squadra ",(SELECT nome FROM squadra WHERE ID=ids2)," sono ",pcs2," ma la
-tabella partita riporta ", ps2);
-END IF;
-END; -- controlli
+  -- confrontiamo i punti assegnati con quelli ricalcolati
+  IF (ps1<>pcs1) THEN SET risultato = concat("I punti della squadra ",(SELECT nome FROM squadra WHERE ID=ids1),
+  " sono ",pcs1," ma la tabella partita riporta ", ps1);
+  ELSEIF (ps2<>pcs2) THEN SET risultato = concat("I punti della squadra ",(SELECT nome FROM squadra WHERE ID=ids2),
+  " sono ",pcs2," ma la tabella partita riporta ", ps2);
+  END IF;
+ END; -- controlli
 
-CLOSE punti; -- chiudiamo il cursore
-RETURN risultato;
+ CLOSE punti; -- chiudiamo il cursore
+ RETURN risultato;
 END$
 ```
 
@@ -2470,15 +2420,14 @@ BEGIN
  DECLARE pcs1 integer unsigned;
  DECLARE pcs2 integer unsigned;
  -- query di calcolo del punteggio dalla tabella segna
- DECLARE punti CURSOR FOR SELECT f.ID_squadra,
- count(*) AS punti
- FROM segna e
- JOIN formazione f ON (e.ID_giocatore =
- f.ID_giocatore)
- JOIN partita p ON (p.ID = e.ID_partita)
- JOIN campionato c ON (c.ID = p.ID_campionato)
- WHERE p.ID=idpartita AND f.anno=c.anno
- GROUP BY f.ID_squadra;
+ DECLARE punti CURSOR FOR SELECT f.ID_squadra, count(*) AS punti
+  FROM segna e
+   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+   JOIN partita p ON (p.ID = e.ID_partita)
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE p.ID=idpartita AND f.anno=c.anno
+  GROUP BY f.ID_squadra;
+  
  -- esecuzione query di ricalcolo
  OPEN punti;
  -- risultato di base (nel caso in cui una squadra non avesse segnato)
@@ -2487,51 +2436,45 @@ BEGIN
  -- informazioni presenti nella tabella
  partita
  SELECT ID_squadra_1,ID_squadra_2
- FROM partita
- WHERE ID=idpartita
+  FROM partita
+  WHERE ID=idpartita
  INTO ids1,ids2;
  
  -- blocco di ricalcolo
  BEGIN
  -- variabili temporanee locali al blocco
- DECLARE ids integer unsigned;
- DECLARE pcs integer unsigned;
- -- handler per il cursore (fa uscire dal blocco
- di ricalcolo)
- DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
+  DECLARE ids integer unsigned;
+  DECLARE pcs integer unsigned;
+ -- handler per il cursore (fa uscire dal blocco di ricalcolo)
+  DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
  -- handler per l'errore (chiude il cursore e propaga la condizione)
- DECLARE EXIT HANDLER FOR SQLSTATE '45000'
- BEGIN
- CLOSE punti; -- chiudiamo il cursore
- RESIGNAL;
- END;
+  DECLARE EXIT HANDLER FOR SQLSTATE '45000'
+  BEGIN
+   CLOSE punti; -- chiudiamo il cursore
+   RESIGNAL;
+  END;
  -- loop di lettura dei punti (ri)calcolati dalla query
- LOOP
- FETCH punti INTO ids,pcs;
- -- aggiornamento dei punti ricalcolati in base alla
- -- squadra corrispondente
- IF (ids=ids1) THEN SET pcs1 = pcs;
- ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
- ELSE BEGIN
+  LOOP
+   FETCH punti INTO ids,pcs;
+ -- aggiornamento dei punti ricalcolati in base alla squadra corrispondente
+   IF (ids=ids1) THEN SET pcs1 = pcs;
+   ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
+   ELSE BEGIN
  -- la squadra che ha segnato non è in partita!
- DECLARE messaggio varchar(100);
- SET messaggio = concat("La squadra ",(SELECT nome
- FROM squadra WHERE ID=ids)," ha segnato ",pcs,"
- punti ma non risulta in partita");
- SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
- messaggio;
- END;
- END IF;
- END LOOP;
+    DECLARE messaggio varchar(100);
+    SET messaggio = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids)," ha segnato ",pcs," punti ma non risulta in partita");
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = messaggio;
+    END;
+   END IF;
+  END LOOP;
  END; -- ricalcolo
  
  CLOSE punti; -- chiudiamo il cursore
  -- aggiorniamo il punteggio della partita
  UPDATE partita
- SET punti_squadra_1=pcs1,
- punti_squadra_2=pcs2
- WHERE ID=idpartita;
- END$
+  SET punti_squadra_1=pcs1, punti_squadra_2=pcs2
+  WHERE ID=idpartita;
+END$
 ```
 
 Da notare come anche in questa procedura ci bocchiamo nel caso in cui risulti aver segnato un giocatore non appartenente alle formazioni delle squadre in partita, ma in questo caso dopo aver chiuso il cursore propaghiamo l'errore verso l'esterno con la RESIGNAL.
@@ -2572,9 +2515,9 @@ Notare come costruiamo le date di inizio e fine campionato come stringhe, e poi 
 Con questo trigger, l'inserimento che segue verrebbe respinto, visto che il campionato con ID=1 si riferisce all'anno 2020:
 
 ```sql
-INSERT INTO partita(data, ID_campionato, ID_luogo, ID_squadra_1,
-ID_squadra_2, punti_squadra_1, punti_squadra_2)
-VALUES ('2050-01-01 12:12:00', '1', '1', '2', '3', '0', '0')
+INSERT INTO partita(data, ID_campionato, ID_luogo, ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+ VALUES ('2050-01-01 12:12:00', '1', '1', '2', '3', '0', '0')
+
 -- Error Code 1644: Data non inclusa nel campionato
 ```
 
@@ -2620,18 +2563,16 @@ Sappiamo come calcolare con una semplice query le formazioni delle squadre, quin
 ```sql
 CREATE TRIGGER giocatore_valido BEFORE INSERT ON segna
 FOR EACH ROW BEGIN
-IF NEW.ID_giocatore NOT IN (
-SELECT ID_giocatore
- FROM partita p
-  JOIN campionato c ON (p.ID_campionato=c.ID)
-  JOIN formazione f ON (f.anno=c.anno
-AND (f.ID_squadra = p.ID_squadra_1
-OR f.ID_squadra = p.ID_squadra_2))
- WHERE p.ID=NEW.ID_partita)
-THEN
-SIGNAL SQLSTATE '45000'
-SET MESSAGE_TEXT="Il giocatore non è in partita";
-END IF;
+  IF NEW.ID_giocatore NOT IN (
+  SELECT ID_giocatore
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato=c.ID)
+    JOIN formazione f ON (f.anno=c.anno AND (f.ID_squadra = p.ID_squadra_1 OR f.ID_squadra = p.ID_squadra_2))
+   WHERE p.ID=NEW.ID_partita)
+ THEN
+  SIGNAL SQLSTATE '45000'
+  SET MESSAGE_TEXT="Il giocatore non è in partita";
+ END IF;
 END$
 ```
 
@@ -2657,18 +2598,19 @@ Se assumiamo di avere anche il trigger appena realizzato, che controlla BEFORE I
 ```sql
 CREATE TRIGGER aggiorna_punti_i AFTER INSERT ON segna
 FOR EACH ROW BEGIN
-DECLARE s integer unsigned;
-SELECT f.ID_squadra FROM
-formazione f
- WHERE f.ID_giocatore=NEW.ID_giocatore AND f.anno = (
-SELECT c.anno
- FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
- WHERE p.ID=NEW.ID_partita)
-INTO s;
-UPDATE partita
-SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,1,0),
-punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,1,0)
- WHERE ID=NEW.ID_partita;
+ DECLARE s integer unsigned;
+ SELECT f.ID_squadra
+  FROM formazione f
+  WHERE f.ID_giocatore=NEW.ID_giocatore AND f.anno = (
+   SELECT c.anno
+    FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
+    WHERE p.ID=NEW.ID_partita)
+ INTO s;
+  
+ UPDATE partita
+  SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,1,0),
+   punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,1,0)
+  WHERE ID=NEW.ID_partita;
 END$
 ```
 
@@ -2680,12 +2622,11 @@ Anche in questo caso, volendo gestire anche gli autogol, la formulazione della q
 SELECT if(NEW.tipo='AUT',
 if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,
 p.ID_squadra_1),f.ID_squadra) as squadra_effettiva
- FROM
-formazione f
+ FROM formazione f
   JOIN partita p
   JOIN campionato c ON (p.ID_campionato = c.ID)
- WHERE (f.ID_giocatore=NEW.ID_giocatore) AND (c.anno=f.anno) AND
-(NEW.ID_partita=p.ID)
+ WHERE (f.ID_giocatore=NEW.ID_giocatore) AND (c.anno=f.anno)
+  AND (NEW.ID_partita=p.ID)
 INTO s;
 ```
 
@@ -2705,19 +2646,19 @@ Ovviamente anche qui ci conviene modularizzare il codice per evitare ridondanze.
 CREATE PROCEDURE step_punti (idpartita integer unsigned,
 idgiocatore integer unsigned, step smallint)
 BEGIN
-DECLARE s integer unsigned;
-SELECT f.ID_squadra
- FROM formazione f
- WHERE f.ID_giocatore=idgiocatore AND f.anno = (
-SELECT c.anno
- FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
- WHERE p.ID=idpartita)
-INTO s;
+ DECLARE s integer unsigned;
+ SELECT f.ID_squadra
+  FROM formazione f
+  WHERE f.ID_giocatore=idgiocatore AND f.anno = (
+ SELECT c.anno
+  FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
+  WHERE p.ID=idpartita)
+ INTO s;
 
-UPDATE partita
-SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,step,0),
-punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,step,0)
- WHERE ID=idpartita;
+ UPDATE partita
+ SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,step,0),
+ punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,step,0)
+  WHERE ID=idpartita;
 END$
 ```
 
