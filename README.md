@@ -1,5 +1,4 @@
 # SQL_Examples
-
 > SQL examples developed during the lectures
 
 ## Usage
@@ -14,7 +13,7 @@ very different code, not aligned with the lectures you attended.
 - All the *queries* developed during the lectures, as well as advanced code such as procedures and triggers,
 are included in a separate document together with examples and a brief explanation of the code.
 
-*This code will be developed and constantly updated starting from the second half of the course, so download it frequently, since it may get updated in the meanwhile.**
+*This code will be developed in the second half of the course, so download it frequently, since it may often get updated.**
 
 ---
 
