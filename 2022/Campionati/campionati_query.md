@@ -211,6 +211,16 @@ SELECT p.ID AS partita_ID,"pippo" AS colonna_inutile,
  FROM partita AS p
 ```
 
+Ma ovviamente possiamo anche generare una stringa calcolata più significativa:
+
+```sql
+SELECT p.ID AS partita_ID,"pippo" AS colonna_inutile,
+  IF(p.punti_squadra_1 = p.punti_squadra_2,"pareggio", 
+   (IF(p.punti_squadra_1 > p.punti_squadra_2,"vittoria della squadra 1","vittoria della squadra 2"))) AS risultato,
+  (p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita AS p
+```
+
 In questo esempio, invece, abbiamo una query colonna che riporta la lista di tutti i luoghi di gioco il cui nome è ottenuto combinando il relativo nome e la città
 
 ```sql
@@ -223,4 +233,10 @@ Il modificatore DISTINCT fa in modo che la SELECT emetta solo record diversi tra
 
 ```sql
 SELECT DISTINCT l.citta FROM luogo l
+```
+
+Ovviamente il confronto viene eseguito su *tutto* il record, quindi la query che segue genererà due record con nome "L'Aquila", visto che comprendiamo anche l'ID nell'output:
+
+```sql
+SELECT DISTINCT l.ID,l.citta FROM luogo l
 ```
