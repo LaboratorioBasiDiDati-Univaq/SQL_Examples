@@ -641,3 +641,411 @@ SELECT f.numero, g.nome, g.cognome
  WHERE f.anno=2020 AND s.nome = "L'Aquila Calcio" AND s.citta="L'Aquila"
  ORDER BY f.numero ASC
 ```
+
+### "I marcatori della partita 1"
+
+Sappiamo che i marcatori, cioè i giocatori che hanno segnato, possono essere estratti dalla tabella segna, filtrandola in base alla partita:
+
+```sql
+SELECT * FROM segna e WHERE e.ID_partita = 1
+```
+
+se vogliamo anche il nome dei giocatori, dobbiamo fare un JOIN con la tabella giocatore:
+
+```sql
+SELECT g.nome, g.cognome, e.minuto
+ FROM segna e JOIN giocatore g ON (e.ID_giocatore=g.ID)
+ WHERE e.ID_partita = 1
+```
+
+e se vogliamo capire per che squadra giocava il giocatore che ha segnato, dobbiamo collegare il giocatore alla squadra tramite la formazione:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, e.minuto
+ FROM segna e JOIN giocatore g ON (e.ID_giocatore=g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+ WHERE e.ID_partita = 1
+ ORDER BY e.minuto ASC
+```
+
+Questa query però è SBAGLIATA. Infatti, in questo modo colleghiamo i giocatori a tutte le formazioni di cui hanno fatto parte, mentre ci serve solo la formazione, e quindi la squadra, in cui giocavano in quella data partita.
+
+Riflettendo, ci accorgiamo che la formazione ha come ulteriore attributo un anno. Potremmo allora confrontare l'anno della formazione con quello estratto dalla data della partita. Facciamo quindi un ulteriore JOIN tra segna e partita e procediamo come segue, usando l'operatore extract di MySQL:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, e.minuto
+ FROM segna e JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+ WHERE e.ID_partita = 1 AND extract(year FROM p.data) = f.anno
+ ORDER BY e.minuto ASC
+```
+
+Ottimo! Ma se, come per i campionati di calcio, le partite dello stesso campionato possono giocarsi in due anni diversi? La formazione a quale dei due anni fa riferimento? In generale, in questi casi si specifica l'anno iniziale della coppia. Ma allora la query precedente non funziona, ad esempio, se la formazione è marcata 2019, essendo riferita al campionato 2019/2020, ma la partita si svolge nel 2020!
+
+Come possiamo risolvere? Potremmo "ragionare" sulla data della partita, cercando di estrarre l'anno giusto sulla base del mese, scrivendo una query come quella che segue, che sfrutta il costrutto IF di MySQL:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, e.minuto
+ FROM segna e JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+ WHERE e.ID_partita = 1 AND IF (EXTRACT(MONTH FROM p.data) >= 9, extract(year FROM p.data), extract(year FROM p.data)-1) = f.anno
+ ORDER BY e.minuto ASC
+```
+
+Ma saremmo troppo "legati" ai mesi in cui si possono giocare le partite di un certo campionato. La soluzione migliore, guardando il nostro database, è usare l'anno che è scritto nel campionato a cui appartiene la partita, in modo da poter semplicemente richiedere che l'anno della formazione sia lo stesso del campionato:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, e.minuto
+ FROM segna e JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE e.ID_partita = 1 AND (c.anno=f.anno)
+ ORDER BY e.minuto ASC
+```
+
+## Join esterni (OUTER JOIN)
+
+### "Lista dei giocatori con le squadre in cui hanno giocato nel 2020"
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra
+ FROM giocatore g 
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra= s.ID)
+ WHERE f.anno=2020
+```
+
+Ma se un giocatore non ha giocato nel 2020? Il JOIN lo esclude! Se volessimo vedere proprio tutti i giocatori, con le squadre in cui eventualmente hanno giocato nel 2020, potremmo usare un JOIN esterno:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra= s.ID)) 
+  ON (f.ID_giocatore = g.ID)
+ WHERE f.anno=2020
+```
+
+In questo caso tutti i record dei giocatori vengono inseriti nel risultato, completati se possibile con quelli del sotto-JOIN (tra parentesi) tra formazione e squadra. Vediamo quindi anche come si può usare un JOIN come una vera e propria tabella, raggruppandolo con delle parentesi e inserendolo come operando in un altro JOIN.
+
+Però anche questa soluzione non funziona. Perché? Perché i giocatori che non hanno giocato non avranno una formazione associata, quindi per loro f.anno sarà nullo, e verranno esclusi dal filtro WHERE. La soluzione è considerare questa evenienza:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra= s.ID))
+  ON (f.ID_giocatore = g.ID)
+ WHERE f.anno IS NULL OR f.anno=2020
+```
+
+oppure spostare il filtro sull'anno dalla WHERE alla condizione del sotto-JOIN tra squadra e formazione, in modo che questo avvenga solo per le formazioni del 2020, e quindi il JOIN più esterno colleghi direttamente i giocatori alle squadre in cui hanno eventualmente giocato nel 2020:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, f.anno
+ FROM giocatore g
+  LEFT JOIN (formazione f JOIN squadra s ON (f.ID_squadra = s.ID AND f.anno=2020))
+  ON (f.ID_giocatore = g.ID)
+```
+
+# Operatori aggregati
+
+### "Numero partite giocate nel campionato del 2020"
+
+La soluzione è contare i record derivanti dalla query che segue:
+
+```sql
+SELECT p.*
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Ma se volessimo farli contare dal DBMS? La soluzione è chiedere che i record siano aggregati e su di essi venga applicato un operatore di aggregazione, come COUNT:
+
+```sql
+SELECT count(*)
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Notare che è possibile contare anche i valori di una certa espressione, ma il risultato è in generale identico a COUNT(\*), tranne quando ci sono valori null: in questo caso COUNT(espressione) conta solo i valori NON NULLI.
+
+```sql
+SELECT count(p.ID) AS numero_partite
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+```sql
+SELECT count(c.ID) AS numero_partite
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Le due query di cui sopra forniscono lo stesso risultato, perché tutte le istanze di c.ID, seppure uguali (tutte le partite sono nello stesso campionato), vengono contate. Possiamo però chiedere a SQL di contare solo il numero di valori DISTINTI e NON NULLI:
+
+```sql
+SELECT count(DISTINCT c.ID)
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Quando si usa un operatore aggregato, si possono inserire nella clausola SELECT delle espressioni non aggregate solo se queste sono funzionalmente dipendenti dall'aggregazione. Ad esempio, l'ID del campionato (c.ID) è unico in tutti i record aggregati, come abbiamo visto, quindi è possibile richiederlo in output:
+
+```sql
+SELECT c.ID, count(*) AS numero_partite
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Ma l'ID della partita non è unico, quindi l'espressione che segue è scorretta:
+
+```sql
+SELECT p.ID, count(*) AS numero_partite
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+In base alla configurazione, il DBMS potrebbe anche far "passare" la query precedente, ma in tal caso la colonna p.ID avrebbe un risultato non significativo (di solito il p.ID del primo record dell'aggregazione). In altri casi, il DBMS potrebbe bloccare anche operazioni legittime come quella in cui si estrae il c.ID vista sopra.
+
+Possiamo però inserire liberamente altre colonne calcolate con operatori aggregati nella stessa query. Ad esempio, numero di partite e numero totale di punti segnati (operatore SUM):
+
+```sql
+SELECT count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+oppure anche le date di inizio e fine campionato (prima e ultima partita, operatori MIN e MAX):
+
+```sql
+SELECT count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
+  min(p.data) AS prima_partita,
+  max(p.data) AS ultima_partita,
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+o ancora la media dei punti per partita (operatore AVG):
+
+```sql
+SELECT count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali,
+  min(p.data) AS prima_partita,
+  max(p.data) AS ultima_partita,
+  avg(p.punti_squadra_1 + p.punti_squadra_2) AS media_punti_partita
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+# Raggruppamento di record (GROUP BY)
+
+### "Numero partite giocate e punti totali segnati in ciascun luogo di gioco nel 2020"
+
+Ovviamente la query di cui sopra non risolve questa richiesta, anche se mettiamo le partite in relazione con i relativi luoghi di svolgimento
+
+```sql
+SELECT l.nome,count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+```
+
+in quanto i conteggi ottenuti sono sempre relativi a TUTTE le partite, e non partizionati rispetto ai luoghi. In questo caso, dobbiamo eseguire un raggruppamento dei record (partite) usando il luogo come criterio e calcolando i valori aggregati su ciascuna partizione. È esattamente ciò che fa la clausola GROUP BY:
+
+```sql
+SELECT l.nome,count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+ GROUP BY l.nome
+```
+
+In realtà la query di cui sopra non è del tutto corretta, in quanto i luoghi sono distinti (UNIQUE) dalla coppia (nome, città), quindi per poterli effettivamente elencare tutti dobbiamo raggruppare per entrambe queste colonne:
+
+```sql
+SELECT l.nome,l.citta,count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+ GROUP BY l.nome,l.citta
+```
+
+sarebbe più comodo raggruppare direttamente per l'ID del luogo, che sappiamo essere la sua chiave primaria. Una query come quella che segue, però, seppur corretta, potrebbe essere bloccata dal DBMS
+
+```sql
+SELECT l.nome,l.citta,count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+ GROUP BY l.ID
+```
+
+in quanto non è chiaro (almeno al DBMS) se nome e città, citati nella SELECT, siano legati all'ID usato per il raggruppamento. La soluzione è inserire anche questi due campi nella GROUP BY: noi sappiamo che questo non cambierà il partizionamento, e il DBMS "è tranquillo" e ci permette di mandarli in output.
+
+```sql
+SELECT l.nome,l.citta,count(*) AS numero_partite,
+  sum(p.punti_squadra_1 + p.punti_squadra_2) AS punti_totali
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+ GROUP BY l.ID,l.nome,l.citta
+```
+
+### "Classifica marcatori 2020"
+
+Procedendo per gradi, sappiamo sicuramente come estrarre la lista dei marcatori delle partite del campionato 2020:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno = 2020 AND (c.anno=f.anno)
+```
+
+in questo caso avremo un record con nome, cognome e squadra pe ogni punto segnato. *Nota: se volessimo considerare gli autogol (ad esempio impostando a un valore negativo il campo punti dei record della tabella segna), potremmo filtrarli da questa classifica (gli autogol non contano nelle classifiche dei marcatori!) inserendo il filtro e.punti\>0.*
+
+Possiamo quindi raggruppare i record in base al giocatore (e alla relativa squadra):
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno = 2020 AND (c.anno=f.anno) AND e.punti>0
+ GROUP BY g.ID, g.nome, g.cognome, s.nome
+```
+
+...e contare quanti punti segnati ci sono in ciascuna partizione:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, sum(e.punti) AS punti
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno = 2020 AND (c.anno=f.anno) AND e.punti>0
+ GROUP BY g.ID, g.nome, g.cognome, s.nome
+```
+
+infine, per ottenere una vera classifica, la ordiniamo per punti (colonna calcolata):
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, sum(e.punti) AS punti
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno = 2020 AND (c.anno=f.anno) AND e.punti>0
+ GROUP BY g.ID, g.nome, g.cognome, s.nome
+ ORDER BY punti DESC
+```
+
+..e per essere precisi, definiamo anche come ordinare tra loro i giocatori a pari punti:
+
+```sql
+SELECT g.nome, g.cognome, s.nome AS squadra, sum(e.punti) AS punti
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno = 2020 AND (c.anno=f.anno) AND e.punti>0
+ GROUP BY g.ID, g.nome, g.cognome, s.nome
+ ORDER BY punti DESC, g.cognome ASC, g.nome ASC, s.nome ASC
+```
+
+### "Calcolo del risultato di una partita (a partire dai punti segnati)"
+
+Modificando la query già vista, possiamo estrarre e contare i punti segnati (indipendentemente dal giocatore) in una specifica partita: basterà fissare l'ID della partita e raggruppare solo per squadra:
+
+```sql
+SELECT s.nome AS squadra, sum(e.punti) AS punti
+ FROM segna e
+  JOIN giocatore g ON (e.ID_giocatore = g.ID)
+  JOIN formazione f ON (f.ID_giocatore = g.ID)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE p.ID = 1 AND (c.anno=f.anno)
+ GROUP BY s.ID, s.nome
+```
+
+Tuttavia, la query di cui sopra non è ottimizzata, in quanto coinvolge la tabella giocatore che non ci serve più (non stampiamo i nomi dei giocatori). È possibile quindi rivedere la catena dei JOIN escludendo la tabella giocatore:
+
+```sql
+SELECT s.nome AS squadra, sum(e.punti) AS punti
+ FROM segna e
+  JOIN formazione f ON (f.ID_giocatore = e.ID_giocatore)
+  JOIN squadra s ON (f.ID_squadra = s.ID)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE p.ID = 1 AND (c.anno=f.anno)
+ GROUP BY s.ID, s.nome
+```
+
+Nota: se in questo caso volessimo prendere in considerazione gli *autogol*, che sono a tutti gli effetti gol da assegnare alla squadra avversaria, dovremmo agire in maniera più "furba". Infatti, nel caso di un autogol, i punti vanno assegnati all'altra squadra in partita, non a quella a cui appartiene il giocatore che lo segna! Gestire questo caso può portare a spezzare in due la query creando delle sotto-query. Tuttavia, volendo conservare il più possibile della formulazione compatta che abbiamo visto finora, possiamo usare un "trucco" e scrivere la query che segue:
+
+```sql
+SELECT s.nome AS squadra, sum(abs(e.punti)) AS punti
+ FROM segna e
+  JOIN formazione f ON (f.ID_giocatore = e.ID_giocatore)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN squadra s ON (s.ID =
+if(e.punti<0,if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1),f.ID_squadra))
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE p.ID = 1 AND (c.anno=f.anno)
+ GROUP BY s.ID, s.nome
+```
+
+Il trucco qui consiste nel sostituire l'espressione del JOIN con la squadra, che a tutti gli effetti ci restituisce, per ogni punto segnato, il nome e l'ID della squadra da usare per il calcolo del punteggio, con un'espressione condizionale complessa, che ovviamente renderà più "pesante" il JOIN, ma realizza nella maniera più semplice quanto desideriamo. In particolare, inseriamo nel JOIN la squadra citata dalla formazione (come nel caso base) se i punti sono
+positivi, altrimenti confrontiamo la squadra a cui appartiene il giocatore (f.ID_squadra) con quelle in partita (p.ID_squadra_1 e p.ID_squadra_2) e inseriamo l'altra squadra. 
+In questo modo, nel JOIN realizzato, indipendentemente da quanto riportato dalla formazione, la squadra inserita sarà quella a vantaggio della quale è stato segnato il punto, 
+e il resto della query (che raggruppa in base alla squadra) potrà rimanere identico, a patto che si sommi il valore assoluto (abs) dei punti, per eliminare il segno meno nel caso degli autogol.
+
+## Condizioni sui gruppi (HAVING)
+
+### "I punti totali segnati, per il campionato 2020, nei luoghi in cui si è giocata più di una partita"
+
+Si tratta di una piccola variante alla query già vista in precedenza.
+
+Se dobbiamo imporre una condizione filtrante NON sui record singoli, MA su funzioni calcolate sulle partizioni (gruppi), non possiamo inserirla nella clausola WHERE (che viene eseguita prima della GROUP BY, quindi lavora sui record), ma in una nuova clausola, HAVING, che viene dopo il raggruppamento:
+
+```sql
+SELECT l.nome,l.citta,
+  sum(p.punti_squadra_1+p.punti_squadra_2) AS punti
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN luogo l ON (l.ID=p.ID_luogo)
+ WHERE c.anno=2020
+ GROUP BY l.ID, l.nome, l.citta
+ HAVING count(*)>1
+```
