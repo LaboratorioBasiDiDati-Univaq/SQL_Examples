@@ -1049,3 +1049,604 @@ SELECT l.nome,l.citta,
  GROUP BY l.ID, l.nome, l.citta
  HAVING count(*)>1
 ```
+
+### "Il numero di squadre in cui ciascun giocatore ha giocato tra il 2015 e il 2020"
+
+Sappiamo facilmente estrarre tutte le formazioni in cui i giocatori hanno giocato
+
+```sql
+SELECT g.nome, g.cognome, s.nome, f.anno
+ FROM giocatore g
+  JOIN formazione f ON (g.ID=f.ID_giocatore)
+  JOIN squadra s ON (s.ID=f.ID_squadra)
+ WHERE f.anno between 2015 AND 2020
+```
+
+possiamo partizionare i risultati rispetto ai giocatori distinti, quindi contare:
+
+```sql
+SELECT g.nome, g.cognome, count(*) AS squadre
+ FROM giocatore g
+  JOIN formazione f ON (g.ID=f.ID_giocatore)
+ WHERE f.anno between 2015 AND 2020
+ GROUP BY g.ID, g.nome, g.cognome
+```
+
+Da notare che abbiamo rimosso la tabella squadra dalla query (assieme al relativo JOIN) in quanto non ci interessa più avere in output il nome di ciascuna squadra, ma solo il numero di formazioni/squadre, che è deducibile dalla sola tabella formazione. Tuttavia, questa query riporta il numero di formazioni in cui ciascun giocatore è stato inserito. Due formazioni diverse possono essere relative alla stessa squadra! Dobbiamo allora contare il numero di squadre distinte che compaiono nelle formazioni associate a ciascun giocatore:
+
+```sql
+SELECT g.nome, g.cognome, count(DISTINCT f.ID_squadra) AS squadre
+ FROM giocatore g
+  JOIN formazione f ON (g.ID=f.ID_giocatore)
+ WHERE f.anno between 2015 AND 2020
+ GROUP BY g.ID, g.nome, g.cognome
+```
+
+### "I giocatori che hanno cambiato squadra tra il 2015 e il 2020"
+
+Volendo estrarre i giocatori che hanno cambiato squadra, cioè quelli che hanno giocato in più di una squadra, basta basarsi sulla query precedente e spostare la count nella clausola HAVING con un opportuno filtro:
+
+```sql
+SELECT g.nome, g.cognome
+ FROM giocatore g
+  JOIN formazione f ON (g.ID=f.ID_giocatore)
+ WHERE f.anno between 2015 AND 2020
+ GROUP BY g.ID, g.nome, g.cognome
+ HAVING count(DISTINCT f.ID_squadra)>1
+```
+
+# Sotto-query avanzate
+
+## Operatore EXISTS
+
+### "I giocatori che hanno segnato almeno un punto nel 2020"
+
+Partiamo facendoci restituire tutti i giocatori che hanno segnato in una partita del 2020:
+
+```sql
+SELECT g.nome, g.cognome, p.ID
+ FROM giocatore g
+  JOIN segna e ON (g.ID=e.ID_giocatore)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+Se selezioniamo solo il nome del giocatore, e filtriamo i duplicati, otteniamo il risultato richiesto:
+
+```sql
+SELECT DISTINCT g.nome, g.cognome
+ FROM giocatore g
+  JOIN segna e ON (g.ID=e.ID_giocatore)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+La stessa cosa poteva essere fatta senza la DISTINCT usando un raggruppamento: basta raggruppare in base al giocatore e poi estrarre il nome e cognome
+
+```sql
+SELECT g.nome, g.cognome
+ FROM giocatore g
+  JOIN segna e ON (g.ID=e.ID_giocatore)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+ GROUP BY g.ID, g.nome, g.cognome
+```
+
+Tuttavia, va notato che *il raggruppamento non è un'alternativa alla DISTINCT nei casi in cui si vogliano eliminare i duplicati dal risultato di una query* sebbene in molti
+casi, come quello appena visto, il risultato sia lo stesso. 
+
+Il raggruppamento è un'operazione più onerosa e con una serie di vincoli e implicazioni, quindi *non deve assolutamente essere introdotto se non quando si debbano utilizzare degli operatori aggregati*. Ad esempio, avrebbe avuto senso usarlo se avessimo voluto rendere esplicita la condizione "almeno un punto" tramite la clausola HAVING. Tale formulazione sarebbe diventata in ogni caso necessaria se avessimo voluto estrarre i giocatori che hanno segnato almeno 2 punti, ad esempio:
+
+```sql
+SELECT g.nome, g.cognome
+ FROM giocatore g
+  JOIN segna e ON (g.ID=e.ID_giocatore)
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+ GROUP BY g.ID, g.nome, g.cognome
+ HAVING sum(abs(e.punti))>=2
+```
+
+Tornando alla query richiesta (almeno un punto), potevamo ottenere lo stesso risultato anche con una sotto-query, scrivendo una query del tipo "restituisci un giocatore se esiste un goal da lui segnato in una partita del 2020". Si tratta di usare la query iniziale (giocatori che hanno segnato 2020) come sotto-query, filtrandola rispetto a uno specifico giocatore e verificando se restituisce almeno un record:
+
+```sql
+SELECT g.nome, g.cognome
+ FROM giocatore g
+ WHERE EXISTS(SELECT *
+ FROM segna e
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND e.ID_giocatore = g.ID)
+```
+
+Notate come la sotto-query lavora sul record del giocatore proveniente dalla query esterna (attraverso il campo g.ID).
+
+### "I giocatori che non hanno segnato nel 2020"
+
+Mentre la query precedente poteva essere efficacemente (e preferibilmente) risolta con JOIN e DISTINCT, questa è semplicissima da risolvere con l'EXISTS, basta negarlo:
+
+```sql
+SELECT g.nome, g.cognome
+ FROM giocatore g
+ WHERE NOT EXISTS(SELECT *
+ FROM segna e
+  JOIN partita p ON (e.ID_partita = p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND e.ID_giocatore = g.ID)
+```
+
+mentre realizzarla senza EXISTS richiederebbe una struttura molto più complessa (ad esempio una differenza insiemistica, che però non è supportata da molti DBMS come MySQL).
+
+## Sotto-query nella clausola FROM
+
+### "A che minuto viene segnato il primo punto in ogni partita del campionato 2020?"
+
+Per cominciare, sappiamo come estrarre tutti i punti segnati in una certa partita:
+
+```sql
+SELECT *
+ FROM segna e
+ WHERE e.ID_partita =1
+```
+
+...e quindi calcolare il minuto minimo tra i punti:
+
+```sql
+SELECT min(e.minuto)
+ FROM segna e
+ WHERE e.ID_partita =1
+```
+
+Una prima soluzione potrebbe essere quindi quella di elencare tutte le partite e associare a ciascuna il minuto del primo punto segnato con una sotto query correlata:
+
+```sql
+SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
+  (SELECT min(e.minuto) FROM segna e WHERE e.ID_partita=p.ID) AS primo_goal
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+```
+
+Notare che per le partite terminate zero a zero il minuto mostrato è null, il che è giusto, perché non ci sono punti da considerare.
+
+Possiamo anche evitare la sotto query usando in maniera più "furba" l'aggregazione:
+
+```sql
+SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
+  min(e.minuto) AS primo_goal
+ FROM partita p
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+ GROUP BY p.ID, s1.nome, s2.nome
+```
+
+abbiamo cioè associato le partite con tutti i punti segnati, abbiamo quindi raggruppato in base alla partita, e in ciascuna partizione ottenuta abbiamo infine calcolato il minuto minimo.
+
+Il problema è che con questa soluzione le partite terminate senza punti (zero a zero) non sono mostrate, neppure con un null come nel caso precedente, per effetto dei JOIN. Volendo avere un risultato del tutto identico a quello della query precedente, possiamo modificare la catena dei JOIN e introdurre in JOIN esterno prima della tabella segna:
+
+```sql
+SELECT p.ID, s1.nome AS sq1, s2.nome AS sq2,
+  min(e.minuto) AS primo_goal
+ FROM (partita p
+   JOIN campionato c ON (p.ID_campionato = c.ID)
+   JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
+   JOIN squadra s2 ON (s2.ID=p.ID_squadra_2))
+  LEFT JOIN segna e ON (e.ID_partita=p.ID)
+ WHERE c.anno=2020
+ GROUP BY p.ID, s1.nome, s2.nome
+```
+
+### "Il tempo medio di attesa prima che un punto venga segnato una partita del campionato 2020"
+
+La query, in altre parole, ci chiede di calcolare la media sul minuto del primo punto segnato in ciascuna partita. Avendo già una query che calcola la lista dei minuti per i primi goal di sogni partita, possiamo usarla come sotto query, in questo caso nella clausola FROM
+
+```sql
+SELECT avg(pg.primo_goal) AS media_primo_goal
+ FROM (
+  SELECT min(e.minuto) AS primo_goal
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato = c.ID)
+    JOIN segna e ON (e.ID_partita=p.ID)
+   WHERE c.anno=2020
+   GROUP BY p.ID
+ ) AS pg
+```
+
+In questo caso la query, messa tra parentesi nella FROM, costituisce per SQL a tutti gli effetti una tabella (calcolata), a cui dobbiamo dare un alias (pg), e sulla quale possiamo effettuare altre operazioni (qui semplicemente la funzione aggregata avg sulla colonna primo_goal di tutti i record). Da notare che abbiamo anche semplificato la sotto-query eliminando i JOIN con la tabella squadra, perché in questo caso non dovevamo esterne i nomi.
+
+### "La media punti segnati da ogni giocatore in una partita del campionato 2020"
+
+Possiamo calcolare i punti segnati da ciascun giocatore in ciascuna partita del 2020 con un'aggregazione:
+
+```sql
+SELECT g.ID AS gioc, g.nome, g.cognome, p.ID AS part,
+  sum(abs(e.punti)) AS segnati
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (e.ID_giocatore=g.ID)
+ WHERE c.anno=2020
+ GROUP BY g.ID, p.ID, g.nome, g.cognome
+```
+
+e applicando la stessa soluzione già vista, cioè usando quella precedente come sotto query nella clausola FROM di un'altra query, otteniamo il risultato richiesto:
+
+```sql
+SELECT gpp.nome, gpp.cognome,
+  avg(gpp.segnati) AS media_punti_partita
+ FROM (
+  SELECT g.ID AS gioc, g.nome, g.cognome, sum(abs(e.punti)) AS segnati
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato = c.ID)
+    JOIN segna e ON (e.ID_partita=p.ID)
+    JOIN giocatore g ON (e.ID_giocatore=g.ID)
+   WHERE c.anno=2020
+   GROUP BY g.ID, p.ID, g.nome, g.cognome
+ ) AS gpp
+ GROUP BY gpp.gioc
+```
+
+In questo caso la query più esterna è leggermente più complessa, perché esegue un nuovo raggruppamento, per distinguere tra loro i punti partita di ciascun giocatore.
+
+## Considerazioni di efficienza con le sotto-query
+
+### "I punti classifica ottenuti in casa dalle squadre nel campionato 2020"
+
+Supponiamo che la "squadra di casa" sia sempre la prima della partita (ID_squadra_1) e che alla squadra vincitrice di una partita vengano assegnati tre punti classifica, mentre in caso di pareggio a entrambe le squadre vada assegnato un punto.
+
+La seguente query associa le partite del campionato 2020 con le squadre che hanno giocato in casa:
+
+```sql
+SELECT *
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_1)
+ WHERE c.anno=2020
+```
+
+Possiamo quindi raggruppare per squadra, magari contando quante partite in totale sono state giocate in casa da quella squadra:
+
+```sql
+SELECT s.nome, count(*) AS numero_partite_casa
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_1)
+ WHERE c.anno=2020
+ GROUP BY s.ID, s.nome
+```
+
+A questo punto, confrontando tra di loro i punteggi riportati nella partita, e considerando che se punti_squadra_1 \> punti_squadra_2 allora la squadra di casa ha vinto, mentre se questi punti sono uguali allora le squadre hanno pareggiato, possiamo usare l'operatore IF di MySQL per calcolare i punti classifica assegnati alla squadra di casa in ogni partita, e quindi sommarli per ottenere il risultato desiderato:
+
+```sql
+SELECT s.nome, sum(
+IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_in_casa
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_1)
+ WHERE c.anno=2020
+ GROUP BY s.ID, s.nome
+```
+
+allo stesso modo possiamo calcolare i punti classifica ottenuti fuori casa, semplicemente considerando la ID_squadra_2 e i relativi punti segnati:
+
+```sql
+SELECT s.nome, sum(
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_fuori_casa
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+ GROUP BY s.ID, s.nome
+```
+
+### "La classifica del campionato 2020"
+
+Sappiamo già calcolare i punti ottenuti in casa e fuori casa da una specifica squadra, ad esempio per la squadra con ID=1 i punti fuori casa sono:
+
+```sql
+SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+  IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+  )) AS punti_classifica_fuori_casa
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=1
+```
+
+da notare che abbiamo eliminato il JOIN con squadra per maggiore efficienza, confrontando l'ID richiesto direttamente con ID_squadra_2. Possiamo allora usare queste due query come sotto query in un'unica SELECT che enumera le squadre e per ciascuna calcola e somma i punti in casa e fuori casa per avere i punti classifica finali:
+
+```sql
+SELECT s.nome, (
+  (SELECT sum(IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+    IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+   ))
+    FROM partita p
+     JOIN campionato c ON (p.ID_campionato = c.ID)
+    WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+  ) + (SELECT sum(IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+    IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+   ))
+    FROM partita p
+     JOIN campionato c ON (p.ID_campionato = c.ID)
+    WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+  )) AS punti_classifica
+ FROM squadra s
+ ORDER BY punti_classifica DESC
+```
+
+Se guardate bene, la query principale (esterna) è una semplice SELECT s.nome, \<subquery\> AS punti_classifica FROM squadra s ORDER BY punti_classifica DESC. Tutta la complessità è nella \<subquery\> nidificata nella SELECT, che è a sua volta composta da due sotto query scalari sommate. In queste ultime abbiamo usato l'alias s1 per la tabella squadra, in modo da poter creare una relazione con la squadra della query esterna (s). Tuttavia, le due sotto query usano lo stesso alias s1, in quanto non si sovrappongono e non ci sono problemi di ambiguità.
+
+C'è però un problema: la query di cui sopra enumera tutte le squadre, anche quelle che potenzialmente potrebbero non aver giocato nel 2020. In tal caso, vengono messe in classifica a zero punti. Questo non è del tutto corretto. Bisogna quindi limitare la query principale alle sole squadre che hanno giocato nel 2020. Un modo per sapere quali sono queste squadre è vedere se esiste (EXISTS) una partita del 2020 in cui la squadra figura come ID_squadra_1 o ID_squadra_2:
+
+```sql
+SELECT s.ID
+ FROM squadra s
+ WHERE EXISTS(SELECT *
+  FROM partita p
+   JOIN campionato c ON (p.ID_campionato = c.ID)
+  WHERE c.anno=2020
+  AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ )
+```
+
+Possiamo introdurre questa condizione nella nostra query principale, ottenendo:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE EXISTS(
+SELECT *
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+)
+ ORDER BY punti_classifica DESC
+```
+
+Tuttavia, potremmo anche ottenere la lista delle squadre che hanno giocato una partita nel 2020 considerando la lista delle squadre che hanno giocato in casa:
+
+```sql
+SELECT ID_squadra_1
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+...e quella delle squadre che hanno giocato fuori casa:
+
+```sql
+SELECT ID_squadra_2
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+...unendole infine in un'unica lista. Come? Usando la UNION di SQL:
+
+```sql
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+UNION
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+```
+
+Da notare che in MySQL la UNION effettua automaticamente una DISTINCT, mentre potremmo avere tutti i record, anche non unici, scrivendo
+
+```sql
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+UNION ALL
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+```
+
+A questo punto è possibile usare la lista appena ottenuta con l'operatore IN all'interno di un'altra versione della query della classifica già realizzata:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE s.ID in (
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+)
+UNION
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+)
+)
+ ORDER BY punti_classifica DESC
+```
+
+Quale query è migliore? Questa o quella con la EXIST già vista? Per rispondere, al di là della complessità delle due sotto query usate per determinare le squadre che hanno giocato, dobbiamo capire come queste vengono eseguite.
+
+Nel caso della EXIST, la sotto query è correlata (tramite s.ID) con la query esterna, quindi la sotto query EXITS verrà eseguita una volta per ogni squadra considerata dalla query principale. Nella soluzione precedente, invece, la sotto query che calcola la lista usata con la IN è costante, nel senso che il suo valore è sempre lo stesso, indipendente dalla squadra considerata. In questo caso, quindi, l'interprete SQL calcolerà la sotto query solo una volta, con un enorme guadagno nel tempo complessivo!
+
+Infine, possiamo ottenere gli ID delle squadre che hanno giocato (in casa o fuori casa) una partita del campionato 2020 anche in un terzo modo, senza usare la UNION e senza l'EXISTS, ma sfruttando in maniera "furba" il JOIN:
+
+```sql
+SELECT DISTINCT s.ID
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID = p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+```
+
+Il trucco qui è stato quello di collegare le partite a entrambe le squadre coinvolte, usando un JOIN con una OR nella condizione. A questo punto, estraendo gli ID delle squadre associate alle partite tramite questo JOIN, avremo gli ID delle squadre che hanno giocato, in casa o fuori casa, tali partite. Potremmo quindi riscrivere la query principale sostituendo alla UNION questa sotto-query come secondo argomento dell'operatore IN:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE s.ID in
+(SELECT DISTINCT s.ID
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+)
+ ORDER BY punti_classifica DESC
+```
+
+L'efficienza di questa query è probabilmente simile a quella che usa la UNION, ma il testo è molto più compatto. Da notare che qui, nella sotto query, usiamo un alias (s) usato anche dalla query esterna. Questo non è un problema, perché semplicemente l'alias ri-dichiarato nella sotto query renderà invisibile (perché inutile) quello esterno.
+
+Partendo da quest'ultima formulazione, però, possiamo eliminare del tutto le sotto query per dare un'ultima, compatta e performante soluzione alla query della classifica:
+
+```sql
+SELECT s.nome, sum(
+IF(s.ID = p.ID_squadra_1,
+IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)),
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0))
+)) AS punti_classifica
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID = p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+ GROUP BY s.ID,s.nome
+ ORDER BY punti_classifica DESC
+```
+
+Il trucco qui è stato partire dalla query che seleziona le squadre associandole alle partite giocate in casa o fuori casa, che prima usavamo nell'operatore IN. A questo punto, raggruppando in base alla squadra (s.ID) avremo in ciascuna partizione le partite in cui quest'ultima ha giocato, in casa o fuori casa, cioè come ID_squadra_1 o ID_squadra_2. Basta quindi rendere l'IF più complesso, andando a vedere se la squadra è, per ciascuna partita, quella di casa (IF(s.ID = p.ID_squadra_1)) o fuori casa, in modo da confrontare i punti della partita in maniera opportuna e calcolare i punti classifica conseguenti.
+
+# Viste
+
+### "I marcatori di tutte le partite, nella forma "anno campionato, ID_partita, squadra_1 -- squadra_2, minuto, nome_giocatore (squadra_giocatore)"
+
+La query è molto semplice da realizzare sulla base di quanto già visto:
+
+```sql
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto, concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+Qui abbiamo usato due "trucchi":
+
+* inserire l'uguaglianza f.anno=c.anno direttamente nella condizione del JOIN con la tabella formazione, invece che in una clausola WHERE,
+
+* evitare di fare un terzo JOIN tra la tabella squadra e quella formazione per determinare il nome della squadra del giocatore, in quanto questa deve essere una delle due squadre in partita, che sono già state associate con altri JOIN (s1 e s2), quindi basta usare l'operatore IF per decidere quale nome stampare.
+
+Se volessimo usare più volte questa query come sotto query, riscriverla sarebbe complesso e renderebbe le query principali molto più lunghe. Possiamo allora creare una vista basata sulla query scrivendo:
+
+```sql
+CREATE VIEW svolgimento_campionati AS
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto,
+concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+In questo modo la definizione della query risulta memorizzata nel database ed è utilizzabile, tramite il nome assegnatole, come una normale tabella in altre query:
+
+```sql
+SELECT *
+ FROM svolgimento_campionati;
+```
+
+```sql
+SELECT *
+ FROM svolgimento_campionati
+ WHERE anno_campionato=2020;
+```
+
+```sql
+SELECT sc.*,p.data
+ FROM svolgimento_campionati sc
+ JOIN partita p ON (p.ID=sc.ID_partita)
+ WHERE anno_campionato=2020
+```
+
+Va sempre ricordato che la vista viene "sostituita" dalla query quando è utilizzata, quindi i dati presenti nella  relativa "tabella virtuale" sono sempre aggiornati sulla base  dei contenuti correnti del database.
