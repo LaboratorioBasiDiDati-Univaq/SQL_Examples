@@ -1650,3 +1650,632 @@ SELECT sc.*,p.data
 ```
 
 Va sempre ricordato che la vista viene "sostituita" dalla query quando è utilizzata, quindi i dati presenti nella  relativa "tabella virtuale" sono sempre aggiornati sulla base  dei contenuti correnti del database.
+
+## Viste per l'accesso programmato ai dati
+
+Un altro uso delle viste può essere quello di limitare/personalizzare l'accesso ai dati in base all'utente che è connesso al DBMS. Ad esempio, possiamo creare una tabella derivata da giocatore che non espone dati sensibili come data e luogo di nascita sotto forma di vista:
+
+```sql
+CREATE VIEW giocatore_gdpr AS
+ SELECT ID,nome,cognome
+  FROM giocatore
+```
+
+In questo modo, potremmo assegnare (GRANT) a un certo utente i privilegi di SELECT su questa tabella piuttosto che su quella di origine (giocatore), permettendogli di usarla in altre query ma senza mai poter accedere ai dati sensibili. Ad esempio:
+
+```sql
+REVOKE SELECT ON campionato.giocatore FROM 'app'@'localhost';
+GRANT SELECT ON campionato.giocatore_gdpr TO 'app'@'localhost';
+```
+
+## Snapshot (viste congelate)
+
+Se invece di *salvare una query* in una vista, volete invece creare uno *snapshot* di quella vista dati, cioè *"congelare" i dati al momento della creazione dello snapshot* , potete creare una tabella (*non una vista*) e riversarvi i dati generati dalla query al momento della creazione dello snapshot.
+
+In questo caso, MySQL ha un'istruzione molto comoda: la CREATE TABLE ... AS ... crea una tabella adatta ad ospitare i risultati di una query e la popola con i dati restituiti dalla query stessa.
+
+```sql
+CREATE TABLE svolgimento_campionati_snapshot_20210519 AS
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto,
+concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+Dopo aver eseguito questa istruzione, avrete nel database una nuova tabella con uno snapshot dei dati restituiti dalla query nell'istante della creazione. Ovviamente questi dati non saranno aggiornati automaticamente: se volete aggiornare lo snapshot dovrete cancellare e ricreare la relativa tabella.
+
+# Procedure
+
+### "Le formazioni di tutte le squadre in tutti gli anni di campionato"
+
+Si tratta di una query molto semplice:
+
+```sql
+SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
+ FROM formazione f
+  JOIN giocatore g ON (g.ID=f.ID_giocatore)
+ ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc
+```
+
+Potremmo memorizzarla sotto forma di vista, ma in SQL esiste anche un altro modo per "incorporare" le query all'interno di una logica più ampia, che ci permette di usarne i risultati per eseguire operazioni complesse, che solitamente avremmo rimesso ai programmi client della base di dati: le procedure.
+
+## Definizione di procedure
+
+*Attenzione: la sintassi delle procedure è molto DBMS-specifica, quindi gli esempi che vedremo di seguito funzionano con MySQL ma potrebbero non funzionare con altri DBMS.*
+
+Possiamo ad esempio inserire la query come istruzione in una procedura:
+
+```sql
+DROP PROCEDURE IF EXISTS formazioni;
+DELIMITER $
+CREATE PROCEDURE formazioni()
+BEGIN
+ SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc;
+END$
+DELMITER ;
+```
+
+Attenzione: per evitare ambiguità tra il terminatore usato per separare le istruzioni all'interno della procedura e quello dello statement SQL CREATE PROCEDURE, modifichiamo temporaneamente quest'ultimo (impostandolo a $) usando il comando DELIMITER. Di seguito ometteremo questo comando negli esempi, ma considerate che è sempre necessario.
+
+## Chiamata di procedure
+
+Per chiamare una procedura si usa il comando CALL:
+
+```sql
+CALL formazioni()
+```
+
+Il risultato dipende dalla procedura. Se, come nel nostro caso, questa contiene un'istruzione-query, allora la chiamata ritorna i risultati della query (in particolare, dell'ultima query eseguita, nel caso ce ne fossero più d'una), proprio come se l'avessimo eseguita in maniera diretta.
+
+## Procedure con parametri
+
+### "La formazione di una specifica squadra per un dato anno"
+
+Sappiamo bene come scrivere questa query, ma ora vorremmo memorizzarla nel database in modo da poterla invocare senza riscriverne l'intero codice. Non possiamo usare una vista, perché ci sono dei parametri (squadra e anno), e le viste non possono avere parametri. Possiamo però usare una procedura, perché quest'ultima può accettare parametri:
+
+```sql
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
+BEGIN
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
+END$
+```
+
+Da notare come i parametri della procedura, dichiarati come fossero colonne di una tabella, possono poi essere usati nella query.
+
+A questo punto, la nuova procedura può essere chiamata scrivendo
+
+```sql
+CALL formazione(1,2020)
+```
+
+## Procedure e tabelle temporanee
+
+Attenzione, però: una chiamata a procedura non si può usare come sotto query, quindi il risultato di cui sopra non si può riutilizzare direttamente per costruire una query più complessa. Un passibile escamotage in questo caso potrebbe essere quello di far creare alla procedura una tabella temporanea nel database con i risultati della query, invece di restituirli, e poi lavorare su questa tabella:
+
+```sql
+CREATE procedure formazione
+(idsquadra integer unsigned, anno smallint)
+BEGIN
+ DROP TABLE IF EXISTS formazione_r;
+ CREATE TEMPORARY TABLE formazione_r AS
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
+END$
+```
+
+La sintassi CREATE TEMPORARY TABLE crea una tabella che verrà rimossa alla chiusura della connessione al DBMS. A questo punto potremmo scrivere
+
+```sql
+CALL formazione(1,2020);
+SELECT * FROM formazione_r;
+```
+
+## Costrutti condizionali: IF
+
+### "La formazione di una specifica squadra per un dato anno o per tutti gli anni di campionato"
+
+Si tratta in questo caso di DUE query distinte, anche se molto simili tra loro. Possiamo però inglobarle in una stessa procedura, usando il costrutto IF...THEN...ELSE per scegliere quale eseguire in base ai parametri passati:
+
+```sql
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
+BEGIN
+ IF (anno is not null) THEN
+ BEGIN
+  SELECT f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.anno=anno AND f.ID_squadra=idsquadra
+   ORDER BY f.numero asc;
+ END;
+ ELSE
+ BEGIN
+  SELECT f.anno, f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.ID_squadra=idsquadra
+   ORDER BY f.anno asc, f.numero asc;
+  END;
+ END IF;
+END$
+```
+
+In questo modo la procedura selezionerà quale query eseguire (restituendone i risultati) in base al valore nullo o non nullo del parametro anno:
+
+```sql
+CALL formazione(1,2020);
+CALL formazione(1,null)
+```
+
+Nota bene: questo risultato avremmo potuto ottenerlo anche senza usare un'istruzione IF, che qui è sfruttata solo per poterne illustrare la sintassi, semplicemente creando una singola query più "intelligente":
+
+```sql
+CREATE PROCEDURE formazione
+(idsquadra integer unsigned, anno smallint)
+BEGIN
+ SELECT f.anno, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE (anno IS NULL OR f.anno=anno) AND f.ID_squadra=idsquadra
+  ORDER BY f.anno asc, f.numero asc;
+END$
+```
+
+L'astuzia qui è nell'espressione *(anno IS NULL OR f.anno=anno)* , che fa valutare il vincolo *f.anno=anno* solo se anno non è nullo. Tuttavia, con questa formulazione 
+non siamo in grado di estrarre insiemi di colonne diversi in base alla modalità di interrogazione, cosa che invece facevamo facilmente nella procedura.
+
+## Parametri di output
+
+### "La squadra di appartenenza di un giocatore in un determinato anno"
+
+Anche qui la query è banale, ma proviamo a incorporarla in una procedura:
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(idgiocatore integer unsigned, anno smallint)
+BEGIN
+ SELECT s.nome FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno;
+END$
+```
+
+Chiamando questa procedura con
+
+```sql
+CALL squadra_appartenenza(1,2020)
+```
+
+avremmo in output un *singleton*, cioè una tabella con una sola riga e una sola colonna, contenente il nome della squadra. Esiste un modo più pratico di riusare questo valore senza passare per una tabella temporanea? In realtà ne esistono molteplici.
+
+Come primo esempio, possiamo passare alla procedura un parametro di *output* (quelli finora passati erano tutti implicitamente solo di *input*, ma possiamo anche esplicitarlo):
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(IN idgiocatore integer unsigned, IN anno smallint,
+OUT nome_squadra varchar(100))
+BEGIN
+ SET nome_squadra = (SELECT s.nome FROM squadra s JOIN formazione f ON
+  (f.ID_squadra=s.ID) WHERE f.ID_giocatore=idgiocatore AND
+  f.anno=anno);
+END$
+```
+
+In questa procedura mostriamo anche come assegnare un valore a una variabile (in questo caso il parametro di output nome_squadra) usando il comando SET. Poiché la query è un sigleton, si può assegnare il suo valore a una variabile come fosse una qualsiasi espressione.
+
+Nella chiamata a questo tipo di procedura, bisogna assicurarsi di passare una variabile al posto dei parametri di tipo OUT. Se la chiamata fosse fatta all'interno di un'altra procedura, potremmo usare delle variabili locali a questo scopo. Se invece chiamiamo la procedura dall'interprete, possiamo creare delle variabili temporanee prefissandone il come con una chiocciola (@):
+
+```sql
+CALL squadra_appartenenza(1,2020,@n)
+```
+
+Dopodiché possiamo usare la variabile @n in qualsiasi contesto:
+
+```sql
+SELECT @n
+```
+
+## Il costrutto SELECT INTO
+
+Nella query precedente, possiamo anche assegnare il parametro di output nome_squadra usando una variante del comando SELECT utilizzabile solo nelle procedure e solo quando la query è di tipo singleton o riga (cioè ritorna una sola riga di risultati, con una o più colonne):
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(IN idgiocatore integer unsigned, IN anno smallint,
+OUT nome_squadra varchar(100))
+BEGIN
+ SELECT s.nome
+  FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
+ INTO nome_squadra;
+END$
+```
+
+Questa speciale sintassi memorizza i valori di ciascuna colonna estratta dalla SELECT nelle rispettive variabili inserite nella clausola finale INTO.
+
+## Dichiarazione e assegnamento di variabili
+
+Come ulteriore variante, possiamo anche estrarre i dati con la query, memorizzarli in variabili locali e poi manipolarli per ottenere il risultato finale (anche se il codice che segue potrebbe essere riscritto più semplicemente con una singola query...)
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(IN idgiocatore integer unsigned, IN anno smallint,
+OUT nome_squadra varchar(100))
+BEGIN
+ DECLARE citta varchar(100);
+ DECLARE nome varchar(100);
+
+ SELECT s.nome,s.citta
+  FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno
+ INTO nome, citta;
+
+ SET nome_squadra = concat(nome,' (',citta,')');
+END$
+```
+
+In questo esempio mostriamo anche come creare variabili locali alla procedura con il comando DECLARE.
+
+# Funzioni
+
+Possiamo riscrivere in maniera più naturale la procedura *squadra_appartenenza* come una funzione:
+
+```sql
+CREATE FUNCTION squadra_per( idgiocatore integer unsigned, anno smallint ) 
+  RETURNS varchar(100) DETERMINISTIC
+BEGIN
+ RETURN (SELECT concat(s.nome,' (',s.citta,')')
+  FROM squadra s JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno);
+END$
+```
+
+Usiamo come di consueto la parola chiave RETURN per restituire il risultato, in questo caso calcolato con un'unica query. Da notare che, nella definizione della funzione:
+
+* I parametri possono essere di solo input.
+
+* Dobbiamo dichiarare il tipo di ritorno con la parola chiave RETURNS dopo la lista parametri.
+
+* In MySQL, le funzioni devono essere deterministiche, cioè devono restituire lo stesso risultato se applicate con gli stessi parametri sugli stessi dati. Questo è necessario per questioni di ottimizzazione e, a più basso livello, per aiutare il sistema di replicazione. Per questo motivo, dovete esplicitamente dichiarare DETERMINISTIC la funzione.
+
+È possibile usare la funzione appena definita in qualsiasi contesto: in altre funzioni o procedure, oppure all'interno di una query, come nell'esempio seguente:
+
+```sql
+SELECT g.nome,g.cognome,squadra_per(g.ID,2020) AS squadra_2020
+ FROM giocatore g;
+```
+
+### "Il numero di punti segnati da una squadra in una partita"
+
+Si tratta di una variante di una query che abbiamo già usato in altri contesti:
+
+```sql
+SELECT sum(abs(e.punti))
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE (f.anno = c.anno) AND (p.ID=X) AND (f.ID_squadra=Y)
+```
+
+Dove X e Y sono gli ID della partita e della squadra che ci interessano. 
+
+Ancora una volta, volendo considerare gli autogol, potremmo scrivere come segue:
+
+```sql
+SELECT sum(abs(e.punti))
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE (f.anno = c.anno) AND (p.ID=X) AND 
+  ((e.punti<0 AND f.ID_squadra<>Y) 
+  OR (e.punti>=0 AND f.ID_squadra=Y))
+```
+
+In questo caso, verifichiamo che l'ID della squadra nella formazione sia quello richiesto per i punti normali e sia diverso da quello richiesto per gli autogol (basta dire "diverso", visto che nella partita ci sono solo due squadre...). *Tuttavia, per limitare la complessità del codice, negli esempi che seguono useremo la versione senza questa variante.*
+
+Vogliamo trasformare questa query in una funzione, in modo da poterla rendere veramente parametrica:
+
+```sql
+CREATE FUNCTION punti_in_partita(
+idpartita integer unsigned, idsquadra integer unsigned)
+  RETURNS integer DETERMINISTIC
+BEGIN
+ RETURN (SELECT sum(abs(e.punti))
+  FROM segna e
+   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+   JOIN partita p ON (p.ID = e.ID_partita)
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE (f.anno = c.anno) AND (p.ID=idpartita)
+ AND (f.ID_squadra=idsquadra));
+END$
+```
+
+Potremmo ad esempio usare questa funzione per ricalcolare i risultati di una partita e confrontarli con quelli inseriti nei campi della tabella partita:
+
+```sql
+SELECT concat(s1.nome,' - ', s2.nome) AS squadre,
+p.punti_squadra_1, p.punti_squadra_2,
+punti_in_partita(p.ID,p.ID_squadra_1) AS punti_1_calcolati,
+punti_in_partita(p.ID,p.ID_squadra_2) AS punti_2_calcolati
+ FROM partita p
+  JOIN squadra s1 ON (s1.ID=p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID=p.ID_squadra_2)
+```
+
+# Codifica della logica di manipolazione dei dati tramite procedure e funzioni
+
+Spesso la struttura di un database è tale che una semplice istruzione DML come INSERT o UPDATE non è sufficiente per aggiungere o modificare i dati in maniera corretta. In questi casi, può essere utile predisporre delle procedure o delle funzioni, richiamabili in maniera più intuitiva dall'utente, che si occupano di effettuare tutti i controlli e le operazioni necessarie a implementare la funzionalità richiesta. Vediamo alcuni esempi.
+
+### "Inserisci una nuova squadra"
+
+Nel primo caso, la procedura si limita a effettuare una banale INSERT:
+
+```sql
+CREATE PROCEDURE aggiungi_squadra(
+nome varchar(50), citta varchar(20))
+BEGIN
+ INSERT INTO squadra(nome,citta) VALUES(nome,citta);
+END$
+```
+
+Per inserire una squadra, l'utente potrà chiamare la procedura:
+
+```sql
+CALL aggiungi_squadra("SquadraNuova1","Roma")
+```
+
+Ovviamente qui la procedura non fa nulla di eccezionale, ma nasconde comunque la logica della INSERT e la struttura della tabella squadra, che nel tempo potrebbero anche cambiare. Possiamo renderla un po' più utile restituendo l'ID auto generato della squadra appena inserita: in questo caso è più opportuno creare una funzione:
+
+```sql
+CREATE FUNCTION aggiungi_squadra(
+nome varchar(50), citta varchar(20))
+RETURNS integer unsigned DETERMINISTIC
+BEGIN
+ INSERT INTO squadra(nome,citta) VALUES(nome,citta);
+ RETURN last_insert_id();
+END$
+```
+
+Dopo aver effettuato la INSERT, restituiamo il nuovo ID auto generato per la squadra, ottenuto tramite la funzione *last_insert_id.*
+
+### "Cerca un arbitro e restituisci la sua chiave. Se non esiste ancora, crealo"
+
+Vogliamo realizzare una funzione che ritorna la chiave di un arbitro dati il suo nome e cognome oppure, se l'arbitro non esiste, lo crea e ne restituisce la nuova chiave auto-generata:
+
+```sql
+CREATE FUNCTION cerca_aggiungi_arbitro(_nome varchar(50), _cognome varchar(100))
+RETURNS integer unsigned DETERMINISTIC
+BEGIN
+ DECLARE aid integer unsigned;
+
+ SELECT a.ID 
+ FROM arbitro a 
+ WHERE a.nome=_nome AND a.cognome=_cognome
+ INTO aid;
+
+ IF (aid IS NULL) THEN
+ BEGIN
+  INSERT INTO arbitro(nome,cognome) VALUES(_nome,_cognome);
+  RETURN last_insert_id();
+ END;
+ ELSE
+ BEGIN
+  RETURN aid;
+ END;
+ END IF;
+END$
+```
+
+La funzione prima prova a cercare l'arbitro tramite i suoi dati, e se non lo trova lo inserisce, quindi ritorna la chiave del record trovato o appena inserito.
+
+Scrivendo quindi
+
+```sql
+SELECT cerca_aggiungi_arbitro("Nome","Cognome")
+```
+
+avremo in output la chiave dell'arbitro, e ci assicureremo contemporaneamente che sia presente nel nostro database.
+
+### "Cerca una squadra e restituisci la sua chiave. Se non esiste ancora, creala"
+
+Questa funzione ha la stessa logica della precedente ma, considerate le differenze tra la tabella squadra e quella arbitro, lavora in modo più complesso:
+
+```sql
+CREATE FUNCTION cerca_aggiungi_squadra(
+  _nome varchar(50), _citta varchar(100))
+  RETURNS integer unsigned DETERMINISTIC
+BEGIN
+ DECLARE idsquadra integer unsigned;
+
+ SELECT s.ID FROM squadra s
+  WHERE s.nome=_nome AND s.citta=_citta
+ INTO idsquadra;
+
+ IF (found_rows()=0) THEN
+ BEGIN
+  INSERT INTO squadra(nome,citta) VALUES(_nome,_citta);
+  RETURN last_insert_id();
+ END;
+ ELSE
+ BEGIN
+  RETURN idsquadra;
+ END;
+ END IF;
+END$
+```
+
+Per prima cosa la funzione cerca la squadra in base alla coppia nome e città (che sappiamo essere UNIQUE) e assegna il suo ID a una variabile. A questo punto, viene usata la funzione *found* _*rows* , che restituisce il numero di righe individuate dalla query immediatamente precedente, per capire se la squadra cercata esiste (*found_rows()=1* ) oppure no (*found_rows()=0* ). Nel primo caso si restituisce semplicemente l'ID individuato. Nel secondo, si effettua una INSERT e poi si restituisce il nuovo ID auto generato per la squadra, ottenuto tramite la funzione *last_insert_id.*
+
+Se effettuiamo quindi le due chiamate che seguono sul database creato finora
+
+```sql
+SELECT cerca_aggiungi_squadra("L'Aquila Calcio","L'Aquila");
+SELECT cerca_aggiungi_squadra("SquadraNuova2","Roma")
+```
+
+Nel primo caso avremo l'ID di una squadra preesistente, mentre nel secondo aggiungeremo una nuova squadra.
+
+### "Aggiungi una nuova partita (completa del relativo arbitro)"
+
+Una query del genere può richiedere vari passaggi, soprattutto se vogliamo inserire, assieme alla partita, anche il suo arbitro (*che supponiamo sia solo*). Infatti in questo caso dovremo inserire anche un record nella tabella direzione, che costituisce la relazione tra partita e arbitro. Possiamo realizzare questa operazione come funzione, restituendo l'ID della partita inserita, oppure come procedura, effettuando semplicemente l'inserimento dei dati oppure restituendo anche in questo caso l'ID della partita tramite un parametro OUT. Scegliamo questa seconda soluzione, che è più generica.
+
+```sql
+CREATE PROCEDURE aggiungi_partita(
+_ID_squadra_1 integer unsigned, _ID_squadra_2 integer unsigned,
+_data datetime,
+_ID_campionato integer unsigned,
+_ID_luogo integer unsigned,
+_nome_arbitro_1 char(50),_cognome_arbitro_1 char(100),
+OUT idpartita integer unsigned)
+BEGIN
+ DECLARE IDarbitro_1 char(16);
+
+ INSERT INTO partita(data, ID_campionato, ID_luogo, ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+  VALUES (_data, _ID_campionato, _ID_luogo, _ID_squadra_1, _ID_squadra_2, 0, 0);
+
+ SET idpartita = last_insert_id();
+
+ SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1, _cognome_arbitro_1);
+
+ INSERT INTO direzione(ID_arbitro,ID_partita)
+  VALUES(IDarbitro_1,idpartita);
+END$
+```
+
+Dopo aver inserito la partita e ottenuto il suo ID, che poi restituiremo tramite il parametro OUT, cerchiamo o aggiungiamo l'arbitro specificato usando la funzione *cerca_aggiungi_arbitro* già realizzata, che ci restituisce il suo ID, il quale verrà a sua volta utilizzato per inserire l'associazione tra la partita e l'arbitro nella tabella direzione. Basterà quindi invocare la procedura con
+
+```sql
+CALL aggiungi_partita(2, 3, "2020-12-13 12:12", 1, 1, "Pinco", "Pallino", @idp)
+```
+
+e poi, se vogliamo, leggere l'ID della partita appena creata:
+
+```sql
+SELECT @idp
+```
+
+Potremmo anche sfruttare la funzione *cerca_aggiungi_squadra* creata prima per rendere la nostra procedura ancor meno dipendente dagli ID interni della base di dati, ad esempio
+
+```sql
+CREATE PROCEDURE aggiungi_partita(
+_nome_squadra_1 varchar(50), _citta_squadra_1 varchar(100),
+_nome_squadra_2 varchar(50), _citta_squadra_2 varchar(100),
+_data datetime,
+_ID_campionato integer unsigned,
+_ID_luogo integer unsigned,
+_nome_arbitro_1 char(50),_cognome_arbitro_1 char(100),
+OUT idpartita integer unsigned)
+BEGIN
+ DECLARE IDarbitro_1 char(16);
+ DECLARE _ID_squadra_1 integer unsigned;
+ DECLARE _ID_squadra_2 integer unsigned;
+
+ SET _ID_squadra_1 = cerca_aggiungi_squadra(_nome_squadra_1, _citta_squadra_1);
+ SET _ID_squadra_2 = cerca_aggiungi_squadra(_nome_squadra_2, _citta_squadra_2);
+
+ INSERT INTO partita(data, ID_campionato, ID_luogo,
+   ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+  VALUES (_data, _ID_campionato, _ID_luogo, _ID_squadra_1, _ID_squadra_2, 0, 0);
+
+ SET idpartita = last_insert_id();
+
+ SET IDarbitro_1 = cerca_aggiungi_arbitro(_nome_arbitro_1, _cognome_arbitro_1);
+
+ INSERT INTO direzione(ID_arbitro,ID_partita)
+  VALUES(IDarbitro_1,idpartita);
+END$
+```
+
+Questa procedura cerca automaticamente gli ID delle squadre coinvolte e le crea se necessario (anche se quest'ultima operazione potrebbe essere pericolosa: se si cita una squadra inesistente, meglio segnalare l'errore piuttosto, come vedremo)
+
+## Segnalare eccezioni
+
+### "Inserisci un nuovo punto segnato da un giocatore in una partita"
+
+Sappiamo che questo significa inserire un record nella tabella segna, ma con una procedura possiamo fare molto di più:
+
+* Verificare che il giocatore sia in partita (cioè appartenga a una delle due squadre che la giocano).
+
+* Aggiornare il punteggio nella tabella partita (cioè i campi calcolati punti_squadra_1 e punti_squadra_2).
+
+In questo modo garantiremo la coerenza dei dati nel nostro database.
+
+```sql
+CREATE PROCEDURE aggiungi_punti( _ID_giocatore integer unsigned, _ID_partita integer unsigned, _minuto smallint, _punti smallint)
+BEGIN
+ DECLARE IDsquadra_giocatore integer unsigned;
+ DECLARE IDsquadra_1 integer unsigned;
+ DECLARE IDsquadra_2 integer unsigned;
+
+ SELECT f.ID_squadra
+  FROM formazione f
+  WHERE f.ID_giocatore=_ID_giocatore AND f.anno=(
+   SELECT c.anno
+    FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
+    WHERE p.ID=_ID_partita)
+  INTO IDsquadra_giocatore;
+
+ SELECT p.ID_squadra_1, p.ID_squadra_2
+  FROM partita p
+  WHERE p.ID=_ID_partita
+ INTO IDsquadra_1,IDsquadra_2;
+
+ IF (IDsquadra_giocatore=IDsquadra_1 OR IDsquadra_giocatore=IDsquadra_2) THEN
+ BEGIN
+  INSERT INTO segna(ID_giocatore,ID_partita,minuto,punti)
+   VALUES (_ID_giocatore,_ID_partita,_minuto,_punti);
+
+  UPDATE partita SET
+    punti_squadra_1 = punti_squadra_1 +
+	 IF (_punti>0,
+      IF(ID_squadra_1=IDsquadra_giocatore,_punti,0),
+	  IF(ID_squadra_2=IDsquadra_giocatore,-_punti,0)
+	 ),
+    punti_squadra_2 = punti_squadra_2 +
+	 IF (_punti>0,
+      IF(ID_squadra_2=IDsquadra_giocatore,_punti,0),
+	  IF(ID_squadra_1=IDsquadra_giocatore,-_punti,0)
+	 )     
+   WHERE ID=_ID_partita;
+ END;
+ ELSE
+ BEGIN
+  SIGNAL SQLSTATE '45000'
+  SET message_text="Il giocatore non è in partita";
+ END;
+ END IF;
+END$
+```
+
+Per prima cosa cerchiamo in che squadra gioca il giocatore indicato nell'anno di campionato corrispondente alla partita specificata. Estraiamo quindi gli ID delle due quadre che giocano effettivamente quella partita. Se il giocatore appartiene a una delle due squadre in gioco, procediamo con l'inserimento del punto nella tabella segna e aggiorniamo il punteggio nella tabella partita usando un piccolo trucco: l'aggiornamento è eseguito su entrambi i campi punti_squadra_1 e punti_squadra_2, ma a questi viene sommato zero o il numero di punti richiesto uno in base a quale delle due squadre ha effettivamente segnato (e considerando anche gli autogol, cioè _punti \< 0), in modo tale che solo uno dei due venga effettivamente incrementato. Nel caso in cui, invece, il giocatore non sia effettivamente in partita, segnaliamo lo stato SQL 45000, che corrisponde a una generica condizione di errore utente, specificando un messaggio esplicativo.
+
+Se quindi chiamiamo, sul database corrente
+
+```sql
+CALL aggiungi_punto(1,1,9,1)
+```
+
+Vedremo modificarsi il risultato della partita 1 come ci aspettiamo, mentre chiamando
+
+```sql
+CALL aggiungi_punto(4,1,19,1)
+-- Error Code: 1644. Il giocatore non è in partita
+```
+
+Vedremo segnalato l'errore, e la base di dati non verrà aggiornata.
