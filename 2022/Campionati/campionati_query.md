@@ -2217,7 +2217,8 @@ Sappiamo che questo significa inserire un record nella tabella segna, ma con una
 In questo modo garantiremo la coerenza dei dati nel nostro database.
 
 ```sql
-CREATE PROCEDURE aggiungi_punti( _ID_giocatore integer unsigned, _ID_partita integer unsigned, _minuto smallint, _punti smallint)
+CREATE PROCEDURE aggiungi_punti( _ID_giocatore integer unsigned, 
+ _ID_partita integer unsigned, _minuto smallint, _punti smallint)
 BEGIN
  DECLARE IDsquadra_giocatore integer unsigned;
  DECLARE IDsquadra_1 integer unsigned;
@@ -2242,16 +2243,16 @@ BEGIN
    VALUES (_ID_giocatore,_ID_partita,_minuto,_punti);
 
   UPDATE partita SET
-    punti_squadra_1 = punti_squadra_1 +
-	 IF (_punti>0,
-      IF(ID_squadra_1=IDsquadra_giocatore,_punti,0),
-	  IF(ID_squadra_2=IDsquadra_giocatore,-_punti,0)
-	 ),
-    punti_squadra_2 = punti_squadra_2 +
-	 IF (_punti>0,
-      IF(ID_squadra_2=IDsquadra_giocatore,_punti,0),
-	  IF(ID_squadra_1=IDsquadra_giocatore,-_punti,0)
-	 )     
+   punti_squadra_1 = punti_squadra_1 +
+    IF (_punti>0,
+     IF(ID_squadra_1=IDsquadra_giocatore,_punti,0),
+     IF(ID_squadra_2=IDsquadra_giocatore,-_punti,0)
+    ),
+   punti_squadra_2 = punti_squadra_2 +
+    IF (_punti>0,
+     IF(ID_squadra_2=IDsquadra_giocatore,_punti,0),
+     IF(ID_squadra_1=IDsquadra_giocatore,-_punti,0)
+    )     
    WHERE ID=_ID_partita;
  END;
  ELSE
