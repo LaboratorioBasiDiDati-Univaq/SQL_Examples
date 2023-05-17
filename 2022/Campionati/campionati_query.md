@@ -2295,7 +2295,7 @@ SELECT f.ID_squadra, sum(abs(e.punti)) AS punti
   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
   JOIN partita p ON (p.ID = e.ID_partita)
   JOIN campionato c ON (c.ID = p.ID_campionato)
- WHERE p.ID=\<ID\> AND f.anno=c.anno
+ WHERE p.ID=<ID> AND f.anno=c.anno
  GROUP BY f.ID_squadra;
 ```
 
@@ -2311,7 +2311,7 @@ SELECT if(e.punti<0,
   JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
   JOIN partita p ON (p.ID = e.ID_partita)
   JOIN campionato c ON (c.ID = p.ID_campionato)
- WHERE p.ID=\<ID\> AND f.anno=c.anno
+ WHERE p.ID=<ID> AND f.anno=c.anno
  GROUP BY squadra_effettiva;
 ```
 
