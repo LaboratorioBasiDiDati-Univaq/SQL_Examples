@@ -2395,7 +2395,8 @@ BEGIN
     ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
     ELSE BEGIN
      -- la squadra che ha segnato non è in partita!
-     SET risultato = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids)," ha segnato ",pcs," punti ma non risulta in partita");
+     SET risultato = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids),
+	  " ha segnato ",pcs," punti ma non risulta in partita");
      -- non eseguiamo altri controlli, usciamo direttamente
      LEAVE controlli;
      END;
@@ -2404,10 +2405,12 @@ BEGIN
   END; -- ricalcolo
 
   -- confrontiamo i punti assegnati con quelli ricalcolati
-  IF (ps1<>pcs1) THEN SET risultato = concat("I punti della squadra ",(SELECT nome FROM squadra WHERE ID=ids1),
-  " sono ",pcs1," ma la tabella partita riporta ", ps1);
-  ELSEIF (ps2<>pcs2) THEN SET risultato = concat("I punti della squadra ",(SELECT nome FROM squadra WHERE ID=ids2),
-  " sono ",pcs2," ma la tabella partita riporta ", ps2);
+  IF (ps1<>pcs1) THEN SET risultato = concat("I punti della squadra ",
+   (SELECT nome FROM squadra WHERE ID=ids1),
+   " sono ",pcs1," ma la tabella partita riporta ", ps1);
+  ELSEIF (ps2<>pcs2) THEN SET risultato = concat("I punti della squadra ",
+   (SELECT nome FROM squadra WHERE ID=ids2),
+   " sono ",pcs2," ma la tabella partita riporta ", ps2);
   END IF;
  END; -- controlli
 
@@ -2482,7 +2485,8 @@ BEGIN
    ELSE BEGIN
  -- la squadra che ha segnato non è in partita!
     DECLARE messaggio varchar(100);
-    SET messaggio = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids)," ha segnato ",pcs," punti ma non risulta in partita");
+    SET messaggio = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids),
+	 " ha segnato ",pcs," punti ma non risulta in partita");
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = messaggio;
     END;
    END IF;
@@ -2497,7 +2501,7 @@ BEGIN
 END$
 ```
 
-Da notare come anche in questa procedura ci bocchiamo nel caso in cui risulti aver segnato un giocatore non appartenente alle formazioni delle squadre in partita, ma in questo caso dopo aver chiuso il cursore propaghiamo l'errore verso l'esterno con la RESIGNAL.
+Da notare come anche in questa procedura ci blocchiamo nel caso in cui risulti aver segnato un giocatore non appartenente alle formazioni delle squadre in partita, ma in questo caso dopo aver chiuso il cursore propaghiamo l'errore verso l'esterno con la RESIGNAL.
 
 Possiamo quindi calcolare e impostare il risultato finale di una partita chiamando
 
