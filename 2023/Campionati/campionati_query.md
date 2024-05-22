@@ -2206,3 +2206,518 @@ END$
 ```
 
 Questa procedura cerca automaticamente gli ID delle squadre coinvolte e le crea se necessario (anche se quest'ultima operazione potrebbe essere pericolosa: se si cita una squadra inesistente, meglio segnalare l'errore piuttosto, come vedremo)
+
+## Segnalare eccezioni
+
+### "Inserisci un nuovo punto segnato da un giocatore in una partita"
+
+Sappiamo che questo significa inserire un record nella tabella segna, ma con una procedura possiamo fare molto di più:
+
+* Verificare che il giocatore sia in partita (cioè appartenga a una delle due squadre che la giocano).
+
+* Aggiornare il punteggio nella tabella partita (cioè i campi calcolati punti_squadra_1 e punti_squadra_2).
+
+In questo modo garantiremo la coerenza dei dati nel nostro database.
+
+```sql
+CREATE PROCEDURE aggiungi_punti( _ID_giocatore integer unsigned, 
+ _ID_partita integer unsigned, _minuto smallint, _punti smallint)
+BEGIN
+ DECLARE IDsquadra_giocatore integer unsigned;
+ DECLARE IDsquadra_1 integer unsigned;
+ DECLARE IDsquadra_2 integer unsigned;
+
+ SELECT f.ID_squadra
+  FROM formazione f
+  WHERE f.ID_giocatore=_ID_giocatore AND f.anno=(
+   SELECT c.anno
+    FROM campionato c JOIN partita p ON (c.ID=p.ID_campionato)
+    WHERE p.ID=_ID_partita)
+  INTO IDsquadra_giocatore;
+
+ SELECT p.ID_squadra_1, p.ID_squadra_2
+  FROM partita p
+  WHERE p.ID=_ID_partita
+ INTO IDsquadra_1,IDsquadra_2;
+
+ IF (IDsquadra_giocatore=IDsquadra_1 OR IDsquadra_giocatore=IDsquadra_2) THEN
+ BEGIN
+  INSERT INTO segna(ID_giocatore,ID_partita,minuto,punti)
+   VALUES (_ID_giocatore,_ID_partita,_minuto,_punti);
+
+  UPDATE partita SET
+   punti_squadra_1 = punti_squadra_1 +
+    IF (_punti>0,
+     IF(ID_squadra_1=IDsquadra_giocatore,_punti,0),
+     IF(ID_squadra_2=IDsquadra_giocatore,-_punti,0)
+    ),
+   punti_squadra_2 = punti_squadra_2 +
+    IF (_punti>0,
+     IF(ID_squadra_2=IDsquadra_giocatore,_punti,0),
+     IF(ID_squadra_1=IDsquadra_giocatore,-_punti,0)
+    )     
+   WHERE ID=_ID_partita;
+ END;
+ ELSE
+ BEGIN
+  SIGNAL SQLSTATE '45000'
+  SET message_text="Il giocatore non è in partita";
+ END;
+ END IF;
+END$
+```
+
+Per prima cosa cerchiamo in che squadra gioca il giocatore indicato nell'anno di campionato corrispondente alla partita specificata. Estraiamo quindi gli ID delle due quadre che giocano effettivamente quella partita. Se il giocatore appartiene a una delle due squadre in gioco, procediamo con l'inserimento del punto nella tabella segna e aggiorniamo il punteggio nella tabella partita usando un piccolo trucco: l'aggiornamento è eseguito su entrambi i campi punti_squadra_1 e punti_squadra_2, ma a questi viene sommato zero o il numero di punti richiesto uno in base a quale delle due squadre ha effettivamente segnato (e considerando anche gli autogol, cioè _punti \< 0), in modo tale che solo uno dei due venga effettivamente incrementato. Nel caso in cui, invece, il giocatore non sia effettivamente in partita, segnaliamo lo stato SQL 45000, che corrisponde a una generica condizione di errore utente, specificando un messaggio esplicativo.
+
+Se quindi chiamiamo, sul database corrente
+
+```sql
+CALL aggiungi_punto(1,1,9,1)
+```
+
+Vedremo modificarsi il risultato della partita 1 come ci aspettiamo, mentre chiamando
+
+```sql
+CALL aggiungi_punto(4,1,19,1)
+-- Error Code: 1644. Il giocatore non è in partita
+```
+
+Vedremo segnalato l'errore, e la base di dati non verrà aggiornata.
+
+# Cursori
+
+I cursori sono il modo con cui SQL (e la maggior parte dei linguaggi di programmazione) gestisce la lettura, all'interno del codice, dei risultati di una query generica, cioè che può potenzialmente restituire più righe e più colonne.
+
+### "Controlla la coerenza tra il risultato calcolato di una partita e i punti segnati"
+
+Quello che dobbiamo fare, per prima cosa, è ricalcolare le squadre che hanno segnato e il corrispondente numero di punti a partire dalla tabella segna. Questa query l'abbiamo già sviluppata in precedenza:
+
+```sql
+SELECT f.ID_squadra, sum(abs(e.punti)) AS punti
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE p.ID=<ID> AND f.anno=c.anno
+ GROUP BY f.ID_squadra;
+```
+
+ovviamente la query ha bisogno di un parametro *\<ID\>* per funzionare. Da notare che se una squadra non ha segnato non comparirà nel risultato di questa query.
+Possiamo ovviamente scrivere una variante più complessa che prende in considerazione gli autogol:
+
+```sql
+SELECT if(e.punti<0, 
+  if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), 
+   f.ID_squadra) AS squadra_effettiva, 
+  sum(abs(e.punti)) AS punti
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE p.ID=<ID> AND f.anno=c.anno
+ GROUP BY squadra_effettiva;
+```
+
+In questo caso raggruppiamo su una colonna calcolata che, in base al tipo di punti, contiene l'ID della squadra a cui questo va effettivamente assegnato (la squadra per cui gioca chi ha segnato i punti, tranne nel caso in cui questi siano negativi, nel qual caso viene selezionata l'altra squadra nella partita).
+
+A questo punto siamo pronti per scrivere la nostra procedura. La logica, dato l'ID di una partita, sarà la seguente:
+
+1. estraiamo le squadre e i punti ad esse assegnati dalla tabella partita
+
+2. ricalcoliamo chi ha segnato nella partita e quanti punti con la query appena vista, o meglio
+
+   1. iteriamo sui record restituiti dalla query
+
+   2. assegniamo a delle variabili i punti delle due squadre in partita
+
+   3. se risulta aver segnato una squadra non in partita, segnaliamo l'errore e usciamo
+
+   4. alla fine del ricalcolo, confrontiamo i punti ricalcolati con quelli estratti dalla tabella partita
+
+      1. se i punti non corrispondono, segnaliamo l'errore e usciamo
+
+      2. altrimenti restituiamo il messaggio "ok" e usciamo
+
+```sql
+CREATE FUNCTION controlla_partita(idpartita integer unsigned) 
+ RETURNS varchar(100) DETERMINISTIC
+BEGIN
+ -- messaggio restituito
+ DECLARE risultato varchar(100);
+ -- query di calcolo del punteggio dalla tabella segna
+ DECLARE punti CURSOR FOR SELECT if(e.punti<0, 
+  if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), 
+   f.ID_squadra) AS squadra_effettiva, 
+  sum(abs(e.punti)) AS punti
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE p.ID=idpartita AND f.anno=c.anno
+ GROUP BY squadra_effettiva;
+ 
+ -- inizializzazione messaggio
+ SET risultato = "ok";
+ -- esecuzione query di ricalcolo
+ OPEN punti;
+
+ -- blocco di controllo
+ controlli: BEGIN
+ -- dati estratti dalla tabella partita
+  DECLARE ids1 integer unsigned;
+  DECLARE ids2 integer unsigned;
+  DECLARE ps1 integer unsigned;
+  DECLARE ps2 integer unsigned;
+  -- punti calcolati dalla tabella segna
+  DECLARE pcs1 integer unsigned;
+  DECLARE pcs2 integer unsigned;
+  -- risultato di base (se una squadra non ha segnato)
+  SET pcs1=0;
+  SET pcs2=0;
+  -- informazioni presenti nella tabella partita
+  SELECT ID_squadra_1,punti_squadra_1,ID_squadra_2,punti_squadra_2
+   FROM partita
+   WHERE ID=idpartita
+  INTO ids1,ps1,ids2,ps2;
+
+  -- blocco (nidificato) di ricalcolo
+  ricalcolo: BEGIN
+   -- variabili temporanee locali al blocco
+   DECLARE ids integer unsigned;
+   DECLARE pcs integer unsigned;
+
+   -- handler per il cursore (fa uscire dal blocco di ricalcolo)
+   DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
+
+   -- loop di lettura dei punti (ri)calcolati dalla query
+   LOOP
+    FETCH punti INTO ids,pcs;
+    -- aggiornamento dei punti ricalcolati in base alla
+    -- squadra corrispondente
+    IF (ids=ids1) THEN SET pcs1 = pcs;
+    ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
+    ELSE BEGIN
+     -- la squadra che ha segnato non è in partita!
+     SET risultato = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids),
+	  " ha segnato ",pcs," punti ma non risulta in partita");
+     -- non eseguiamo altri controlli, usciamo direttamente
+     LEAVE controlli;
+     END;
+    END IF;
+   END LOOP;
+  END; -- ricalcolo
+
+  -- confrontiamo i punti assegnati con quelli ricalcolati
+  IF (ps1<>pcs1) THEN SET risultato = concat("I punti della squadra ",
+   (SELECT nome FROM squadra WHERE ID=ids1),
+   " sono ",pcs1," ma la tabella partita riporta ", ps1);
+  ELSEIF (ps2<>pcs2) THEN SET risultato = concat("I punti della squadra ",
+   (SELECT nome FROM squadra WHERE ID=ids2),
+   " sono ",pcs2," ma la tabella partita riporta ", ps2);
+  END IF;
+ END; -- controlli
+
+ CLOSE punti; -- chiudiamo il cursore
+ RETURN risultato;
+END$
+```
+
+Da notare il modo in cui abbiamo nidificato i blocchi in modo che l'EXIT HANDLER del cursore e il comando LEAVE facciano saltare sempre nel punto giusto del codice, e che prima della RETURN venga eseguita sempre la CLOSE.
+
+A questo punto possiamo eseguire i nostri controlli:
+
+```sql
+SELECT p.ID, controlla_partita(p.ID) AS risultato FROM partita p;
+```
+
+### "Imposta il punteggio finale di una partita in base ai punti in essa segnati"
+
+In questo caso non vogliamo controllare se il punteggio finale attribuito a una partita è corretto, ma calcolarlo e impostarlo. La soluzione è una procedura molto simile a quella vista in precedenza per i controlli, che però alla fine aggiorna la partita.
+
+```sql
+CREATE PROCEDURE aggiorna_punti(idpartita integer unsigned)
+BEGIN
+ -- dati estratti dalla tabella partita
+ DECLARE ids1 integer unsigned;
+ DECLARE ids2 integer unsigned;
+ -- punti calcolati dalla tabella segna
+ DECLARE pcs1 integer unsigned;
+ DECLARE pcs2 integer unsigned;
+ -- query di calcolo del punteggio dalla tabella segna
+ DECLARE punti CURSOR FOR SELECT if(e.punti<0, 
+  if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), 
+   f.ID_squadra) AS squadra_effettiva, 
+  sum(abs(e.punti)) AS punti
+ FROM segna e
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore)
+  JOIN partita p ON (p.ID = e.ID_partita)
+  JOIN campionato c ON (c.ID = p.ID_campionato)
+ WHERE p.ID=idpartita AND f.anno=c.anno
+ GROUP BY squadra_effettiva;
+  
+ -- esecuzione query di ricalcolo
+ OPEN punti;
+ -- risultato di base (nel caso in cui una squadra non avesse segnato)
+ SET pcs1=0;
+ SET pcs2=0;
+ -- informazioni presenti nella tabella partita
+ SELECT ID_squadra_1,ID_squadra_2
+  FROM partita
+  WHERE ID=idpartita
+ INTO ids1,ids2;
+ 
+ -- blocco di ricalcolo
+ BEGIN
+ -- variabili temporanee locali al blocco
+  DECLARE ids integer unsigned;
+  DECLARE pcs integer unsigned;
+ -- handler per il cursore (fa uscire dal blocco di ricalcolo)
+  DECLARE EXIT HANDLER FOR NOT FOUND BEGIN END;
+ -- handler per l'errore (chiude il cursore e propaga la condizione)
+  DECLARE EXIT HANDLER FOR SQLSTATE '45000'
+  BEGIN
+   CLOSE punti; -- chiudiamo il cursore
+   RESIGNAL;
+  END;
+ -- loop di lettura dei punti (ri)calcolati dalla query
+  LOOP
+   FETCH punti INTO ids,pcs;
+ -- aggiornamento dei punti ricalcolati in base alla squadra corrispondente
+   IF (ids=ids1) THEN SET pcs1 = pcs;
+   ELSEIF (ids=ids2) THEN SET pcs2 = pcs;
+   ELSE BEGIN
+ -- la squadra che ha segnato non è in partita!
+    DECLARE messaggio varchar(100);
+    SET messaggio = concat("La squadra ",(SELECT nome FROM squadra WHERE ID=ids),
+	 " ha segnato ",pcs," punti ma non risulta in partita");
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = messaggio;
+    END;
+   END IF;
+  END LOOP;
+ END; -- ricalcolo
+ 
+ CLOSE punti; -- chiudiamo il cursore
+ -- aggiorniamo il punteggio della partita
+ UPDATE partita
+  SET punti_squadra_1=pcs1, punti_squadra_2=pcs2
+  WHERE ID=idpartita;
+END$
+```
+
+Da notare come anche in questa procedura ci blocchiamo nel caso in cui risulti aver segnato un giocatore non appartenente alle formazioni delle squadre in partita, ma in questo caso dopo aver chiuso il cursore propaghiamo l'errore verso l'esterno con la RESIGNAL.
+
+Possiamo quindi calcolare e impostare il risultato finale di una partita chiamando
+
+```sql
+CALL aggiorna_punti(3)
+```
+
+# Trigger
+
+## Trigger di controllo
+
+Con i trigger possiamo eseguire diversi tipi di controllo sui dati, bloccando le operazioni nel caso in cui questi falliscano. Questo tipo di trigger è sempre posto BEFORE l'operazione.
+
+### "Controlla automaticamente che la data della partita sia all'interno del campionato associato"
+
+Immaginando che il campionato vada dal primo settembre dell'anno corrispondente al trenta giugno dell'anno successivo, possiamo scrivere il trigger che segue:
+
+```sql
+CREATE TRIGGER data_partita_valida BEFORE INSERT ON partita
+FOR EACH ROW BEGIN
+ DECLARE a smallint;
+ SELECT anno FROM campionato WHERE ID =NEW.ID_campionato INTO a;
+ IF NEW.data NOT BETWEEN str_to_date(concat(a,"-09-01"),"%Y-%m-%d")
+  AND str_to_date(concat((a+1),"-06-30"),"%Y-%m-%d")
+ THEN BEGIN
+   SIGNAL SQLSTATE '45000'
+   SET MESSAGE_TEXT = "Data non inclusa nel campionato";
+  END;
+ END IF;
+END$
+```
+
+Notare come costruiamo le date di inizio e fine campionato come stringhe, e poi usiamo str_to_date per assicurarci che siano trasformate in un valido valore di tipo DATE di MySQL (in questo caso, visto come abbiamo costruito la stringa della data, non sarebbe strettamente necessario).
+
+Con questo trigger, l'inserimento che segue verrebbe respinto, visto che il campionato con ID=1 si riferisce all'anno 2020:
+
+```sql
+INSERT INTO partita(data, ID_campionato, ID_luogo, ID_squadra_1, ID_squadra_2, punti_squadra_1, punti_squadra_2)
+ VALUES ('2050-01-01 12:12:00', '1', '1', '2', '3', '0', '0')
+
+-- Error Code 1644: Data non inclusa nel campionato
+```
+
+Tuttavia, il trigger non ci protegge dagli aggiornamenti che, dato un record corretto già inserito, modificano la sua data rendendola scorretta. Per questo motivo è opportuno creare anche un trigger BEFORE UPDATE che esegue lo stesso controllo. A questo punto, per non duplicare codice, possiamo modularizzare i trigger estraendo il controllo vero e proprio e inserendolo in una procedura di supporto:
+
+```sql
+CREATE PROCEDURE convalida_data
+(idcampionato integer unsigned, data datetime)
+BEGIN
+ DECLARE a smallint;
+ SELECT anno FROM campionato WHERE ID =idcampionato INTO a;
+ IF data NOT BETWEEN str_to_date(concat(a,"-09-01"),"%Y-%m-%d")
+  AND str_to_date(concat((a+1),"-06-30"),"%Y-%m-%d")
+  THEN BEGIN
+   SIGNAL SQLSTATE '45000'
+   SET MESSAGE_TEXT = "Data non inclusa nel campionato";
+  END;
+ END IF;
+END$
+```
+
+E poi scrivere semplicemente i due trigger
+
+```sql
+CREATE TRIGGER data_partita_valida_i BEFORE INSERT ON
+partita
+FOR EACH ROW BEGIN
+ CALL convalida_data(NEW.ID_campionato,NEW.data);
+END$
+```
+
+```sql
+CREATE TRIGGER data_partita_valida_u BEFORE UPDATE ON partita
+FOR EACH ROW BEGIN
+ CALL convalida_data(NEW.ID_campionato,NEW.data);
+END$
+```
+
+### "Controlla automaticamente che un giocatore inserito nella tabella segna appartenga alle formazioni delle squadre della relativa partita"
+
+Sappiamo come calcolare con una semplice query le formazioni delle squadre, quindi possiamo scrivere altrettanto semplicemente il trigger che controlla se il giocatore è in queste formazioni, e in caso contrario genera un errore:
+
+```sql
+CREATE TRIGGER giocatore_valido BEFORE INSERT ON segna
+FOR EACH ROW BEGIN
+  IF NEW.ID_giocatore NOT IN (
+  SELECT ID_giocatore
+   FROM partita p
+    JOIN campionato c ON (p.ID_campionato=c.ID)
+    JOIN formazione f ON (f.anno=c.anno AND (f.ID_squadra = p.ID_squadra_1 OR f.ID_squadra = p.ID_squadra_2))
+   WHERE p.ID=NEW.ID_partita)
+ THEN
+  SIGNAL SQLSTATE '45000'
+  SET MESSAGE_TEXT="Il giocatore non è in partita";
+ END IF;
+END$
+```
+
+A questo punto possiamo provare il funzionamento del trigger inserendo dei dati non validi nella tabella segna:
+
+```sql
+INSERT INTO segna(ID_giocatore, ID_partita, minuto, punti)
+ VALUES (4, 1, 18, 1)
+
+-- Error Code 1644: Il giocatore non è in partita
+```
+
+Anche in questo caso, il trigger andrebbe inserito anche BEFORE UPDATE per avere maggior sicurezza, ma omettiamo qui il codice per brevità.
+
+## Trigger di calcolo
+
+I trigger possono essere anche un comodo strumento per tenere aggiornati i valori dei campi calcolati, senza doversi preoccupare di inserire il relativo codice in tutte le procedure che possono determinarne il ricalcolo e impedire che i dati possano essere modificati direttamente. In questo caso, dovendo agire quando i dati sono stati effettivamente modificati, il trigger sarà sempre inserito AFTER l'evento corrispondente.
+
+### "Ricalcola il punteggio finale di una partita ogni volta che viene inserito un punto nella tabella segna"
+
+Se assumiamo di avere anche il trigger appena realizzato, che controlla BEFORE INSERT la validità del giocatore e quindi del record da inserire, possiamo assumere in un trigger AFTER INSERT che tutti i dati siano coerenti e procedere senza ulteriori controlli.
+
+```sql
+CREATE TRIGGER aggiorna_punti_i AFTER INSERT ON segna
+FOR EACH ROW BEGIN
+ DECLARE s integer unsigned;
+ 
+ SELECT if(NEW.punti<0, 
+  if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), 
+   f.ID_squadra) AS squadra_effettiva
+  FROM formazione f 
+   JOIN partita p  
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE p.ID=NEW.ID_partita AND (f.anno=c.anno AND f.ID_giocatore=NEW.ID_giocatore)
+ INTO s;
+  
+ UPDATE partita
+  SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,abs(NEW.punti),0),
+   punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,abs(NEW.punti),0)
+  WHERE ID=NEW.ID_partita;
+END$
+```
+
+Quello che facciamo è prima di tutto calcolare in che squadra gioca chi ha segnato i punti; se i punti sono negativi, si tratta di un autogol, quindi scegliamo l'altra squadra in partita (quella per cui non gioca il giocatore). Alla fina aggiorniamo il punteggio della partita di conseguenza (usando il trucco del singolo UPDATE sui due punteggi con un valore calcolato tramite IF, già usato in altre query). 
+
+Ovviamente, anche qui dovremmo gestire tutte le possibili modifiche alla tabella segna e aggiornare il campo calcolato di conseguenza:
+
+* Dopo un INSERT si aumenta il punteggio della squadra per cui il giocatore ha segnato
+
+* Dopo un DELETE si decrementa il punteggio della squadra corrispondente al record che viene cancellato
+
+* Dopo un UPDATE si decrementa il punteggio della squadra corrispondente al "vecchio" record e si aumenta il punteggio della squadra corrispondente al "nuovo" record.
+
+Ovviamente anche qui ci conviene modularizzare il codice per evitare ridondanze. Estraiamo quindi dal trigger precedente il codice che calcola la squadra di appartenenza del giocatore *idgiocatore* e somma un numero *step* al punteggio della squadra nella partita *idpartita* per cui sono stati segnati i punti:
+
+```sql
+CREATE PROCEDURE step_punti (idpartita integer unsigned,
+idgiocatore integer unsigned, step smallint, auto tinyint)
+BEGIN
+ DECLARE s integer unsigned;
+ 
+ SELECT if(auto<0, 
+  if(f.ID_squadra=p.ID_squadra_1,p.ID_squadra_2,p.ID_squadra_1), 
+   f.ID_squadra) AS squadra_effettiva
+  FROM formazione f 
+   JOIN partita p  
+   JOIN campionato c ON (c.ID = p.ID_campionato)
+  WHERE p.ID=idpartita AND (f.anno=c.anno AND f.ID_giocatore=idgiocatore)
+ INTO s;
+  
+ UPDATE partita
+  SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,step,0),
+   punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,step,0)
+  WHERE ID=idpartita;
+END$  
+```
+
+Questa procedura accetta un ulteriore parametro, *auto*, che determina se i punti (*step*) corrispondono a un autogol (se *auto\<0*). Non usiamo a questo scopo
+semplicemente il segno di *step* (come facevamo prima con *punti*) perchè vogliamo usare la procedura in modo intelligente, come vedremo qui di seguito.
+
+A questo punto i tre trigger da realizzare diventano banali:
+
+```sql
+CREATE TRIGGER aggiorna_punti_i AFTER INSERT ON segna
+FOR EACH ROW BEGIN
+ CALL step_punti(NEW.ID_partita,NEW.ID_giocatore,abs(NEW.punti),sign(NEW.punti));
+END$
+```
+
+```sql
+CREATE TRIGGER aggiorna_punti_d AFTER DELETE ON segna
+FOR EACH ROW BEGIN
+ CALL step_punti(OLD.ID_partita,OLD.ID_giocatore,-abs(OLD.punti),sign(OLD.punti));
+END$
+```
+
+```sql
+CREATE TRIGGER aggiorna_punti_u AFTER UPDATE ON segna
+FOR EACH ROW BEGIN
+ CALL step_punti(OLD.ID_partita,OLD.ID_giocatore,-abs(OLD.punti),sign(OLD.punti));
+ CALL step_punti(NEW.ID_partita,NEW.ID_giocatore,abs(NEW.punti),sign(NEW.punti));
+END$
+```
+
+Da notare come lo step sia *negativo* nel caso in cui (DELETE e prima parte della UPDATE) si debbano togliere punti invece di aggiungerli. Il valore del parametro *auto* viene invece calcolato con la funzione *sign*, che restituisce -1, 0 o 1 in base al segno del suo argomento.
+
+A questo punto possiamo provare il funzionamento dei trigger inserendo o modificando dei dati nella tabella segna e poi andando a vedere lo stato dalla tabella partita:
+
+```sql
+INSERT INTO segna(ID_giocatore, ID_partita, minuto, punti) VALUES (1, 1, 1, 1);
+```
+
+```sql
+UPDATE segna SET ID_giocatore=3 WHERE ID_giocatore=1 AND ID_partita=1 AND minuto=1;
+```
+
+```sql
+DELETE FROM segna WHERE ID_giocatore=3 AND ID_partita=1 AND minuto=1;
+```
+
+Ovviamente la presenza di un trigger AFTER UPDATE richiede, per essere sicuri che tutto vada bene, che ci sia anche un altro trigger che controlla BEFORE UPDATE la validità del giocatore nel record modificato, come discusso nella sezione precedente.
