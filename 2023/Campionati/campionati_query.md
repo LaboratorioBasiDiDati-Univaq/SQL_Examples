@@ -2721,3 +2721,55 @@ DELETE FROM segna WHERE ID_giocatore=3 AND ID_partita=1 AND minuto=1;
 ```
 
 Ovviamente la presenza di un trigger AFTER UPDATE richiede, per essere sicuri che tutto vada bene, che ci sia anche un altro trigger che controlla BEFORE UPDATE la validità del giocatore nel record modificato, come discusso nella sezione precedente.
+
+# Transazioni
+
+In questa sede non possiamo spiegare il concetto di transazione, che è stato ampiamente trattato nella parte teorica del corso di Basi di Dati. Ricordiamo solo che una transazione permette di "raggruppare" più operazioni in un "contenitore" con le proprietà **ACID** (*atomicità* , *consistenza* , *isolamento* , *persistenza*).
+
+Una transazione può essere aperta con lo statement START TRANSACTION. Tuttavia, i DBMS come MySQL aprono automaticamente una transazione, se non è già presente, quando viene loro inviato un comando. Questo vuol dire che, anche se non utilizzate esplicitamente le transazioni, il DBMS le crea comunque "dietro le quinte".
+
+Sappiamo anche che una transazione può essere chiusa e confermata con il comando COMMIT o chiusa e annullata (eliminando gli effetti delle istruzioni in essa contenute) con il comando ROLLBACK. Tuttavia, in MySQL come in molti altri DBMS è attiva per default la cosiddetta **autocommit** : in pratica, il DBMS *esegue una COMMIT implicita dopo ogni istruzione che gli viene inviata*.
+
+In questo modo il DBMS *di default aprirà una transazione per ogni istruzione inviata e la chiuderà, confermandola, subito dopo aver eseguito l'istruzione*. Per usare quindi le transazioni a livello utente, la prima cosa da fare è disabilitare l'autocommit: in MySQL scriveremo
+
+```sql
+SET autocommit = 0
+```
+
+Ovviamente volendo riattivare l'autocommit basterà usare la stessa istruzione ponendo la variabile a uno anziché a zero.
+
+A questo punto, se inviamo uno statement senza scrivere prima START TRANSACTION, MySQL aprirà comunque una nuova transazione, ma poi la lascerà aperta:
+
+```sql
+INSERT INTO campionato(nome,anno) VALUES ("prova",2040);
+```
+
+Se dopo aver eseguito questo comando controlliamo la tabella campionato, vedremo che la nuova riga è stata aggiunta. Tuttavia, la transazione non è stata confermata ed è ancora aperta: se inviamo quindi il comando
+
+```sql
+ROLLBACK
+```
+
+vedremo che gli effetti della transazione (adesso chiusa) sono stati annullati, e il nuovo record è scomparso dalla tabella campionato.
+
+Per chiudere la transazione e confermarne le modifiche apportate al database, avremmo invece dovuto inviare il comando COMMIT.
+
+Alternativamente, è possibile *aprire una transazione esplicita anche mentre l'autocommit è attivo*, usando esplicitamente il comando START TRANSACTION:
+
+```sql
+SET autocommit = 1;
+START TRANSACTION;
+INSERT INTO campionato(nome,anno) VALUES ("prova",2040);
+```
+
+Il comando INSERT qui sopra non viene confermato automaticamente, anche se l'autocommit è attivo. Infatti, avendo aperto la transazione in maniera esplicita, 
+l'autocommit è stato *sospeso*, e la transazione dovrà essere chiusa esplicitamente:
+
+```sql
+COMMIT
+```
+
+A questo punto l'autocommit tornerà attivo come da default.
+
+Attenzione: poichè MySQL non supporta *transazioni nidificate*, eseguire una START TRANSACTION quando un'altra transazione è già attiva determina il COMMIT
+implicito della transazione corrente e l'apertura successiva di una nuova transazione.
