@@ -5,7 +5,7 @@ USE azienda;
 -- se stiamo effettuando delle prove, effettuiamo prima un drop di tutte le tabelle che stiamo per ricreare
 -- alternativamente, potremmo cancellare l'intero database e ricrearlo
 -- da notare che i drop vanno eseguiti in ordine opposto rispetto alle create per essere certi di non violare
--- alcun vingolo di integrità referenziale sui metadati
+-- alcun vincolo di integrità referenziale sui metadati
 DROP TABLE IF EXISTS haLavorato;
 DROP TABLE IF EXISTS composto;
 DROP TABLE IF EXISTS fornisce;
