@@ -1573,3 +1573,501 @@ SELECT s.nome, (
 ```
 
 Se guardate bene, la query principale (esterna) è una semplice SELECT s.nome, \<subquery\> AS punti_classifica FROM squadra s ORDER BY punti_classifica DESC. Tutta la complessità è nella \<subquery\> nidificata nella SELECT, che è a sua volta composta da due sotto query scalari sommate. In queste ultime abbiamo usato l'alias s1 per la tabella squadra, in modo da poter creare una relazione con la squadra della query esterna (s). Tuttavia, le due sotto query usano lo stesso alias s1, in quanto non si sovrappongono e non ci sono problemi di ambiguità.
+
+C'è però un problema: la query di cui sopra enumera tutte le squadre, anche quelle che potenzialmente potrebbero non aver giocato nel 2020. In tal caso, vengono messe in classifica a zero punti. Questo non è del tutto corretto. Bisogna quindi limitare la query principale alle sole squadre che hanno giocato nel 2020. Un modo per sapere quali sono queste squadre è vedere se esiste (EXISTS) una partita del 2020 in cui la squadra figura come ID_squadra_1 o ID_squadra_2:
+
+```sql
+SELECT s.ID
+ FROM squadra s
+ WHERE EXISTS(SELECT *
+  FROM partita p
+   JOIN campionato c ON (p.ID_campionato = c.ID)
+  WHERE c.anno=2020
+  AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ )
+```
+
+Possiamo introdurre questa condizione nella nostra query principale, ottenendo:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE EXISTS(
+SELECT *
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+AND (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+)
+ ORDER BY punti_classifica DESC
+```
+
+Tuttavia, potremmo anche ottenere la lista delle squadre che hanno giocato una partita nel 2020 considerando la lista delle squadre che hanno giocato in casa:
+
+```sql
+SELECT ID_squadra_1
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+...e quella delle squadre che hanno giocato fuori casa:
+
+```sql
+SELECT ID_squadra_2
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+```
+
+...unendole infine in un'unica lista. Come? Usando la UNION di SQL:
+
+```sql
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+UNION
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+```
+
+Da notare che in MySQL la UNION effettua automaticamente una DISTINCT, mentre potremmo avere tutti i record, anche non unici, scrivendo
+
+```sql
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+UNION ALL
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020)
+```
+
+A questo punto è possibile usare la lista appena ottenuta con l'operatore IN all'interno di un'altra versione della query della classifica già realizzata:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE s.ID in (
+(SELECT ID_squadra_1 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+)
+UNION
+(SELECT ID_squadra_2 AS squadra
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020
+)
+)
+ ORDER BY punti_classifica DESC
+```
+
+Quale query è migliore? Questa o quella con la EXIST già vista? Per rispondere, al di là della complessità delle due sotto query usate per determinare le squadre che hanno giocato, dobbiamo capire come queste vengono eseguite.
+
+Nel caso della EXIST, la sotto query è correlata (tramite s.ID) con la query esterna, quindi la sotto query EXITS verrà eseguita una volta per ogni squadra considerata dalla query principale. Nella soluzione precedente, invece, la sotto query che calcola la lista usata con la IN è costante, nel senso che il suo valore è sempre lo stesso, indipendente dalla squadra considerata. In questo caso, quindi, l'interprete SQL calcolerà la sotto query solo una volta, con un enorme guadagno nel tempo complessivo!
+
+Infine, possiamo ottenere gli ID delle squadre che hanno giocato (in casa o fuori casa) una partita del campionato 2020 anche in un terzo modo, senza usare la UNION e senza l'EXISTS, ma sfruttando in maniera "furba" il JOIN:
+
+```sql
+SELECT DISTINCT s.ID
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID = p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+```
+
+Il trucco qui è stato quello di collegare le partite a entrambe le squadre coinvolte, usando un JOIN con una OR nella condizione. A questo punto, estraendo gli ID delle squadre associate alle partite tramite questo JOIN, avremo gli ID delle squadre che hanno giocato, in casa o fuori casa, tali partite. Potremmo quindi riscrivere la query principale sostituendo alla UNION questa sotto-query come secondo argomento dell'operatore IN:
+
+```sql
+SELECT s.nome, (
+(SELECT sum(
+IF(p.punti_squadra_1>p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_1=s.ID
+) +
+(SELECT sum(
+IF(p.punti_squadra_1<p.punti_squadra_2,
+3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)
+))
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+ WHERE c.anno=2020 AND p.ID_squadra_2=s.ID
+)
+) AS punti_classifica
+ FROM squadra s
+ WHERE s.ID in
+(SELECT DISTINCT s.ID
+ FROM partita p JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID=p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+)
+ ORDER BY punti_classifica DESC
+```
+
+L'efficienza di questa query è probabilmente simile a quella che usa la UNION, ma il testo è molto più compatto. Da notare che qui, nella sotto query, usiamo un alias (s) usato anche dalla query esterna. Questo non è un problema, perché semplicemente l'alias ri-dichiarato nella sotto query renderà invisibile (perché inutile) quello esterno.
+
+Partendo da quest'ultima formulazione, però, possiamo eliminare del tutto le sotto query per dare un'ultima, compatta e performante soluzione alla query della classifica:
+
+```sql
+SELECT s.nome, sum(
+IF(s.ID = p.ID_squadra_1,
+IF(p.punti_squadra_1>p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0)),
+IF(p.punti_squadra_1<p.punti_squadra_2, 3,
+IF(p.punti_squadra_1=p.punti_squadra_2,1,0))
+)) AS punti_classifica
+ FROM partita p
+  JOIN campionato c ON (p.ID_campionato = c.ID)
+  JOIN squadra s ON (s.ID = p.ID_squadra_1 OR s.ID=p.ID_squadra_2)
+ WHERE c.anno=2020
+ GROUP BY s.ID,s.nome
+ ORDER BY punti_classifica DESC
+```
+
+Il trucco qui è stato partire dalla query che seleziona le squadre associandole alle partite giocate in casa o fuori casa, che prima usavamo nell'operatore IN. A questo punto, raggruppando in base alla squadra (s.ID) avremo in ciascuna partizione le partite in cui quest'ultima ha giocato, in casa o fuori casa, cioè come ID_squadra_1 o ID_squadra_2. Basta quindi rendere l'IF più complesso, andando a vedere se la squadra è, per ciascuna partita, quella di casa (IF(s.ID = p.ID_squadra_1)) o fuori casa, in modo da confrontare i punti della partita in maniera opportuna e calcolare i punti classifica conseguenti.
+
+# Viste
+
+### "I marcatori di tutte le partite, nella forma "anno campionato, ID_partita, squadra_1 -- squadra_2, minuto, nome_giocatore (squadra_giocatore)"
+
+La query è molto semplice da realizzare sulla base di quanto già visto:
+
+```sql
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto, concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+Qui abbiamo usato due "trucchi":
+
+- inserire l'uguaglianza f.anno=c.anno direttamente nella condizione del JOIN con la tabella formazione, invece che in una clausola WHERE,
+
+- evitare di fare un terzo JOIN tra la tabella squadra e quella formazione per determinare il nome della squadra del giocatore, in quanto questa deve essere una delle due squadre in partita, che sono già state associate con altri JOIN (s1 e s2), quindi basta usare l'operatore IF per decidere quale nome stampare.
+
+Se volessimo usare più volte questa query come sotto query, riscriverla sarebbe complesso e renderebbe le query principali molto più lunghe. Possiamo allora creare una vista basata sulla query scrivendo:
+
+```sql
+CREATE VIEW svolgimento_campionati AS
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto,
+concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+In questo modo la definizione della query risulta memorizzata nel database ed è utilizzabile, tramite il nome assegnatole, come una normale tabella in altre query:
+
+```sql
+SELECT *
+ FROM svolgimento_campionati;
+```
+
+```sql
+SELECT *
+ FROM svolgimento_campionati
+ WHERE anno_campionato=2020;
+```
+
+```sql
+SELECT sc.*,p.data
+ FROM svolgimento_campionati sc
+ JOIN partita p ON (p.ID=sc.ID_partita)
+ WHERE anno_campionato=2020
+```
+
+Va sempre ricordato che la vista viene "sostituita" dalla query quando è utilizzata, quindi i dati presenti nella  relativa "tabella virtuale" sono sempre aggiornati sulla base  dei contenuti correnti del database.
+
+## Viste per l'accesso programmato ai dati
+
+Un altro uso delle viste può essere quello di limitare/personalizzare l'accesso ai dati in base all'utente che è connesso al DBMS. Ad esempio, possiamo creare una tabella derivata da giocatore che non espone dati sensibili come data e luogo di nascita sotto forma di vista:
+
+```sql
+CREATE VIEW giocatore_gdpr AS
+ SELECT ID,nome,cognome
+  FROM giocatore
+```
+
+In questo modo, potremmo assegnare (GRANT) a un certo utente i privilegi di SELECT su questa tabella piuttosto che su quella di origine (giocatore), permettendogli di usarla in altre query ma senza mai poter accedere ai dati sensibili. Ad esempio:
+
+```sql
+REVOKE SELECT ON campionato.giocatore FROM 'app'@'localhost';
+GRANT SELECT ON campionato.giocatore_gdpr TO 'app'@'localhost';
+```
+
+## Snapshot (viste congelate)
+
+Se invece di *salvare una query* in una vista, volete invece creare uno *snapshot* di quella vista dati, cioè *"congelare" i dati al momento della creazione dello snapshot* , potete creare una tabella (*non una vista*) e riversarvi i dati generati dalla query al momento della creazione dello snapshot.
+
+In questo caso, MySQL ha un'istruzione molto comoda: la CREATE TABLE ... AS ... crea una tabella adatta ad ospitare i risultati di una query e la popola con i dati restituiti dalla query stessa.
+
+```sql
+CREATE TABLE svolgimento_campionati_snapshot_20210519 AS
+SELECT c.anno AS anno_campionato, p.ID AS ID_partita,
+concat(s1.nome, ' - ', s2.nome) AS descrizione_partita,
+e.minuto AS minuto,
+concat(g.nome,' ',g.cognome,
+' (',IF(f.ID_squadra=s1.ID,s1.nome,s2.nome),')') AS marcatore
+ FROM campionato c
+  JOIN partita p ON (c.ID = p.ID_campionato)
+  JOIN squadra s1 ON (s1.ID = p.ID_squadra_1)
+  JOIN squadra s2 ON (s2.ID = p.ID_squadra_2)
+  JOIN segna e ON (e.ID_partita=p.ID)
+  JOIN giocatore g ON (g.ID=e.ID_giocatore)
+  JOIN formazione f ON (e.ID_giocatore = f.ID_giocatore AND f.anno=c.anno)
+ ORDER BY p.data asc, e.minuto asc
+```
+
+Dopo aver eseguito questa istruzione, avrete nel database una nuova tabella con uno snapshot dei dati restituiti dalla query nell'istante della creazione. Ovviamente questi dati non saranno aggiornati automaticamente: se volete aggiornare lo snapshot dovrete cancellare e ricreare la relativa tabella.
+
+# Procedure
+
+### "Le formazioni di tutte le squadre in tutti gli anni di campionato"
+
+Si tratta di una query molto semplice:
+
+```sql
+SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
+ FROM formazione f
+  JOIN giocatore g ON (g.ID=f.ID_giocatore)
+ ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc
+```
+
+Potremmo memorizzarla sotto forma di vista, ma in SQL esiste anche un altro modo per "incorporare" le query all'interno di una logica più ampia, che ci permette di usarne i risultati per eseguire operazioni complesse, che solitamente avremmo rimesso ai programmi client della base di dati: le procedure.
+
+## Definizione di procedure
+
+*Attenzione: la sintassi delle procedure è molto DBMS-specifica, quindi gli esempi che vedremo di seguito funzionano con MySQL ma potrebbero non funzionare con altri DBMS.*
+
+Possiamo ad esempio inserire la query come istruzione in una procedura:
+
+```sql
+DROP PROCEDURE IF EXISTS formazioni;
+DELIMITER $
+CREATE PROCEDURE formazioni()
+BEGIN
+ SELECT f.anno, f.ID_squadra, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  ORDER BY f.anno asc, f.ID_squadra asc, f.numero asc;
+END$
+DELMITER ;
+```
+
+Attenzione: per evitare ambiguità tra il terminatore usato per separare le istruzioni all'interno della procedura e quello dello statement SQL CREATE PROCEDURE, modifichiamo temporaneamente quest'ultimo (impostandolo a $) usando il comando DELIMITER. Di seguito ometteremo questo comando negli esempi, ma considerate che è sempre necessario.
+
+## Chiamata di procedure
+
+Per chiamare una procedura si usa il comando CALL:
+
+```sql
+CALL formazioni()
+```
+
+Il risultato dipende dalla procedura. Se, come nel nostro caso, questa contiene un'istruzione-query, allora la chiamata ritorna i risultati della query (in particolare, dell'ultima query eseguita, nel caso ce ne fossero più d'una), proprio come se l'avessimo eseguita in maniera diretta.
+
+## Procedure con parametri
+
+### "La formazione di una specifica squadra per un dato anno"
+
+Sappiamo bene come scrivere questa query, ma ora vorremmo memorizzarla nel database in modo da poterla invocare senza riscriverne l'intero codice. Non possiamo usare una vista, perché ci sono dei parametri (squadra e anno), e le viste non possono avere parametri. Possiamo però usare una procedura, perché quest'ultima può accettare parametri:
+
+```sql
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
+BEGIN
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
+END$
+```
+
+Da notare come i parametri della procedura, dichiarati come fossero colonne di una tabella, possono poi essere usati nella query.
+
+A questo punto, la nuova procedura può essere chiamata scrivendo
+
+```sql
+CALL formazione(1,2020)
+```
+
+## Procedure e tabelle temporanee
+
+Attenzione, però: una chiamata a procedura non si può usare come sotto query, quindi il risultato di cui sopra non si può riutilizzare direttamente per costruire una query più complessa. Un passibile escamotage in questo caso potrebbe essere quello di far creare alla procedura una tabella temporanea nel database con i risultati della query, invece di restituirli, e poi lavorare su questa tabella:
+
+```sql
+CREATE procedure formazione
+(idsquadra integer unsigned, anno smallint)
+BEGIN
+ DROP TABLE IF EXISTS formazione_r;
+ CREATE TEMPORARY TABLE formazione_r AS
+ SELECT f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE f.anno=anno AND f.ID_squadra=idsquadra
+  ORDER BY f.numero asc;
+END$
+```
+
+La sintassi CREATE TEMPORARY TABLE crea una tabella che verrà rimossa alla chiusura della connessione al DBMS. A questo punto potremmo scrivere
+
+```sql
+CALL formazione(1,2020);
+SELECT * FROM formazione_r;
+```
+
+## Costrutti condizionali: IF
+
+### "La formazione di una specifica squadra per un dato anno o per tutti gli anni di campionato"
+
+Si tratta in questo caso di DUE query distinte, anche se molto simili tra loro. Possiamo però inglobarle in una stessa procedura, usando il costrutto IF...THEN...ELSE per scegliere quale eseguire in base ai parametri passati:
+
+```sql
+CREATE PROCEDURE formazione (idsquadra integer unsigned, anno smallint)
+BEGIN
+ IF (anno is not null) THEN
+ BEGIN
+  SELECT f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.anno=anno AND f.ID_squadra=idsquadra
+   ORDER BY f.numero asc;
+ END;
+ ELSE
+ BEGIN
+  SELECT f.anno, f.numero, g.nome, g.cognome
+   FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+   WHERE f.ID_squadra=idsquadra
+   ORDER BY f.anno asc, f.numero asc;
+  END;
+ END IF;
+END$
+```
+
+In questo modo la procedura selezionerà quale query eseguire (restituendone i risultati) in base al valore nullo o non nullo del parametro anno:
+
+```sql
+CALL formazione(1,2020);
+CALL formazione(1,null)
+```
+
+Nota bene: questo risultato avremmo potuto ottenerlo anche senza usare un'istruzione IF, che qui è sfruttata solo per poterne illustrare la sintassi, semplicemente creando una singola query più "intelligente":
+
+```sql
+CREATE PROCEDURE formazione
+(idsquadra integer unsigned, anno smallint)
+BEGIN
+ SELECT f.anno, f.numero, g.nome, g.cognome
+  FROM formazione f JOIN giocatore g ON (g.ID=f.ID_giocatore)
+  WHERE (anno IS NULL OR f.anno=anno) AND f.ID_squadra=idsquadra
+  ORDER BY f.anno asc, f.numero asc;
+END$
+```
+
+L'astuzia qui è nell'espressione *(anno IS NULL OR f.anno=anno)* , che fa valutare il vincolo *f.anno=anno* solo se anno non è nullo. Tuttavia, con questa formulazione 
+non siamo in grado di estrarre insiemi di colonne diversi in base alla modalità di interrogazione, cosa che invece facevamo facilmente nella procedura.
+
+## Parametri di output
+
+### "La squadra di appartenenza di un giocatore in un determinato anno"
+
+Anche qui la query è banale, ma proviamo a incorporarla in una procedura:
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(idgiocatore integer unsigned, anno smallint)
+BEGIN
+ SELECT s.nome FROM squadra s
+   JOIN formazione f ON (f.ID_squadra=s.ID)
+  WHERE f.ID_giocatore=idgiocatore AND f.anno=anno;
+END$
+```
+
+Chiamando questa procedura con
+
+```sql
+CALL squadra_appartenenza(1,2020)
+```
+
+avremmo in output un *singleton*, cioè una tabella con una sola riga e una sola colonna, contenente il nome della squadra. Esiste un modo più pratico di riusare questo valore senza passare per una tabella temporanea? In realtà ne esistono molteplici.
+
+Come primo esempio, possiamo passare alla procedura un parametro di *output* (quelli finora passati erano tutti implicitamente solo di *input*, ma possiamo anche esplicitarlo):
+
+```sql
+CREATE PROCEDURE squadra_appartenenza
+(IN idgiocatore integer unsigned, IN anno smallint,
+OUT nome_squadra varchar(100))
+BEGIN
+ SET nome_squadra = (SELECT s.nome FROM squadra s JOIN formazione f ON
+  (f.ID_squadra=s.ID) WHERE f.ID_giocatore=idgiocatore AND
+  f.anno=anno);
+END$
+```
+
+In questa procedura mostriamo anche come assegnare un valore a una variabile (in questo caso il parametro di output nome_squadra) usando il comando SET. Poiché la query è un sigleton, si può assegnare il suo valore a una variabile come fosse una qualsiasi espressione.
+
+Nella chiamata a questo tipo di procedura, bisogna assicurarsi di passare una variabile al posto dei parametri di tipo OUT. Se la chiamata fosse fatta all'interno di un'altra procedura, potremmo usare delle variabili locali a questo scopo. Se invece chiamiamo la procedura dall'interprete, possiamo creare delle variabili temporanee prefissandone il come con una chiocciola (@):
+
+```sql
+CALL squadra_appartenenza(1,2020,@n)
+```
+
+Dopodiché possiamo usare la variabile @n in qualsiasi contesto:
+
+```sql
+SELECT @n
+```
