@@ -2819,13 +2819,13 @@ FOR EACH ROW BEGIN
  INTO s;
   
  UPDATE partita
-  SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,abs(NEW.punti),0),
-   punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,abs(NEW.punti),0)
+  SET punti_squadra_1=greatest(0,cast(punti_squadra_1 AS SIGNED)+IF(s=ID_squadra_1,step,0)),
+      punti_squadra_2=greatest(0,cast(punti_squadra_2 AS SIGNED)+IF(s=ID_squadra_2,step,0))
   WHERE ID=NEW.ID_partita;
 END$
 ```
 
-Quello che facciamo è prima di tutto calcolare in che squadra gioca chi ha segnato i punti; se i punti sono negativi, si tratta di un autogol, quindi scegliamo l'altra squadra in partita (quella per cui non gioca il giocatore). Alla fina aggiorniamo il punteggio della partita di conseguenza (usando il trucco del singolo UPDATE sui due punteggi con un valore calcolato tramite IF, già usato in altre query). 
+Quello che facciamo è prima di tutto calcolare in che squadra gioca chi ha segnato i punti; se i punti sono negativi, si tratta di un autogol, quindi scegliamo l'altra squadra in partita (quella per cui non gioca il giocatore). Alla fine aggiorniamo il punteggio della partita di conseguenza (usando il trucco del singolo UPDATE sui due punteggi con un valore calcolato tramite IF, già usato in altre query). Da notare che usiamo la funzione *greatest* di MySQL per proteggerci da casi "strani" (ad esempio se abbiamo inserito manualmente dei dati errati nella tabella partita) in cui questa operazione potrebbe portare il punteggio al di sotto dello zero. Inoltre, è necessario usare un *cast* per aggiungere il segno a *punti_squadra_1* e *punti_squadra_2* (che sono valori *unsigned*) perchè altrimenti un'espressione come *punti_squadra_1 - 1* potrebbe generare un errore di *data truncation*.
 
 Ovviamente, anche qui dovremmo gestire tutte le possibili modifiche alla tabella segna e aggiornare il campo calcolato di conseguenza:
 
@@ -2853,14 +2853,14 @@ BEGIN
  INTO s;
   
  UPDATE partita
-  SET punti_squadra_1=punti_squadra_1+IF(s=ID_squadra_1,step,0),
-   punti_squadra_2=punti_squadra_2+IF(s=ID_squadra_2,step,0)
+  SET punti_squadra_1=greatest(0,cast(punti_squadra_1 AS SIGNED)+IF(s=ID_squadra_1,step,0)),
+      punti_squadra_2=greatest(0,cast(punti_squadra_2 AS SIGNED)+IF(s=ID_squadra_2,step,0))
   WHERE ID=idpartita;
 END$  
 ```
 
 Questa procedura accetta un ulteriore parametro, *auto*, che determina se i punti (*step*) corrispondono a un autogol (se *auto\<0*). Non usiamo a questo scopo
-semplicemente il segno di *step* (come facevamo prima con *punti*) perchè vogliamo usare la procedura in modo intelligente, come vedremo qui di seguito.
+semplicemente il segno di *step* (come facevamo prima con *punti*) perchè vogliamo usare la procedura in modo intelligente, come vedremo qui di seguito. 
 
 A questo punto i tre trigger da realizzare diventano banali:
 

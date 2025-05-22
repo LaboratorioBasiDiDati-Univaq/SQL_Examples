@@ -3,12 +3,12 @@ USE campionati;
 
 -- svuotiamo le tabelle
 DELETE FROM iscritta;
-DELETE FROM partita;
-DELETE FROM formazione;
-DELETE FROM dirige;
-DELETE FROM squadra;
 DELETE FROM segna;
 DELETE FROM gioca;
+DELETE FROM formazione;
+DELETE FROM dirige;
+DELETE FROM partita;
+DELETE FROM squadra;
 DELETE FROM giocatore;
 DELETE FROM campionato;
 DELETE FROM arbitro;
