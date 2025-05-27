@@ -1,3 +1,13 @@
+> Le query qui riportate sono state sviluppate a partire della struttura definita dal file *compionati_struttura.sql* 
+> e testati usando i dati presenti nel file *campionati_dati.sql*. 
+> Le principali procedure e i trigger riportati alla fine del documento sono presenti anche nei 
+> file *compionati_procedure.sql* e *compionati_trigger.sql*.
+
+> **Attenzione**: la struttura del caso di studio *campionati* contiene delle relazioni (come *gioca* e *iscritta*) 
+> che potrebbero essere utilizzate per semplificare alcune delle query proposte in questo documento. 
+> Tali relazioni sono state volutamente ignorate per poter presentare query più articolate, ma il lettore potrà 
+> autonomamente provare ad utilizzarle per definire soluzioni alternative ad alcuni dei quesiti proposti di seguito.
+
 # Query di base
 
 Seleziona tutte le colonne di tutte le righe di una tabella
