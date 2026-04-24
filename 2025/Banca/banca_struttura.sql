@@ -1,4 +1,4 @@
--- creaimo il database, se non è già presente, e lo selezioniamo come default per tutte le istruzioni successive
+-- creiamo il database, se non è già presente, e lo selezioniamo come default per tutte le istruzioni successive
 CREATE DATABASE IF NOT EXISTS banca;
 USE banca;
 
@@ -11,7 +11,6 @@ DROP TABLE IF EXISTS bonifico;
 DROP TABLE IF EXISTS depositocontanti;
 DROP TABLE IF EXISTS prelievocontanti;
 DROP TABLE IF EXISTS giroconto;
-DROP TABLE IF EXISTS bonifico;
 DROP TABLE IF EXISTS assegno;
 DROP TABLE IF EXISTS pagamentoelettronico;
 DROP TABLE IF EXISTS movimento;
